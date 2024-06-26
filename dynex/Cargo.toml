@@ -1,10 +1,10 @@
 [package]
 name = "dynex"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 keywords = ["dyn", "derive", "trait", "partial-eq", "clone"]
-description = "Inherit and derive object-unsafe traits for dynamic rust."
+description = "Inherit and derive object-unsafe traits for dynamic Rust."
 readme = "README.md"
 repository = "https://github.com/shigma/dynex"
 documentation = "https://docs.rs/dynex"
@@ -13,7 +13,7 @@ documentation = "https://docs.rs/dynex"
 proc-macro = true
 
 [dependencies]
-dynex_core = { version = "0.1.0", path = "../dynex_core" }
+dynex_core = { version = "0.1.1", path = "../dynex_core" }
 proc-macro2 = "1.0.60"
 quote = "1.0.28"
 syn = { version = "2.0.68", features = ["extra-traits", "full"] }

@@ -1,6 +1,6 @@
 # dynex
 
-Inherit and derive object-unsafe traits for dynamic rust.
+Inherit and derive object-unsafe traits for dynamic Rust.
 
 ## Introduction
 
@@ -8,7 +8,7 @@ Inherit and derive object-unsafe traits for dynamic rust.
 
 For example, you cannot simply write:
 
-```rust
+```rust compile_fail
 pub trait Meta: Clone + PartialEq {}
 
 #[derive(Clone, PartialEq)]
@@ -115,7 +115,7 @@ fn main() {
 }
 ```
 
-## Credit
+## Credits
 
 The crate is inspired by the following crates:
 
