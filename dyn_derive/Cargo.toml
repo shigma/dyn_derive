@@ -1,0 +1,21 @@
+[package]
+name = "dyn_derive"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+keywords = ["dynamic", "derive"]
+description = "Magically derive non-object-safe traits"
+readme = "README.md"
+repository = "https://github.com/shigma/dyn_derive"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+dyn_traits = { version = "0.1.0", path = "../dyn_traits" }
+proc-macro2 = "1.0.60"
+quote = "1.0.28"
+syn = { version = "2.0.68", features = ["extra-traits", "full"] }
+
+[dev-dependencies]
+trybuild = "1.0.80"
