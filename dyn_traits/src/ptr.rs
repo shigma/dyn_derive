@@ -23,6 +23,7 @@ impl<T: std::clone::Clone> Clone for [T] {
     }
 }
 
+#[doc(hidden)]
 pub fn convert_into_box<T: ?Sized, R: AsRef<T>>(t: R, f: impl FnOnce(R) -> *mut ()) -> Box<T> {
     let mut fat_ptr = t.as_ref() as *const T;
     let data_ptr = &mut fat_ptr as *mut *const T as *mut *mut ();
@@ -32,11 +33,12 @@ pub fn convert_into_box<T: ?Sized, R: AsRef<T>>(t: R, f: impl FnOnce(R) -> *mut 
     }
 }
 
-pub fn convert_to_box<T: ?Sized>(t: &T, f: impl FnOnce(&T) -> *mut ()) -> Box<T> {
-    let mut fat_ptr = t as *const T;
+#[doc(hidden)]
+pub fn convert_to_box<T: ?Sized, R: AsRef<T>>(t: R, f: impl FnOnce(&T) -> *mut ()) -> Box<T> {
+    let mut fat_ptr = t.as_ref() as *const T;
     let data_ptr = &mut fat_ptr as *mut *const T as *mut *mut ();
     unsafe {
-        *data_ptr = f(t);
+        *data_ptr = f(t.as_ref());
         Box::from_raw(fat_ptr as *mut T)
     }
 }

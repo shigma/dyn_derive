@@ -16,7 +16,7 @@ fn derive_partial_eq() {
 
     impl Foo for FooImpl {}
 
-    #[derive(DynPartialEq)]
+    #[derive(DynPartialEq, DynClone)]
     pub struct Bar {
         foo: Box<dyn Foo>,
     }

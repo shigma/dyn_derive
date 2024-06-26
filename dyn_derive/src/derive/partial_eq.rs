@@ -1,6 +1,8 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
+use super::utils::is_dyn;
+
 pub fn derive(input: TokenStream) -> TokenStream {
     let item: syn::DeriveInput = syn::parse2(input).expect("expect struct or enum");
     let item_ident = &item.ident;
@@ -17,30 +19,6 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 #output
             }
         }
-    }
-}
-
-fn is_dyn(ty: &syn::Type) -> bool {
-    match ty {
-        syn::Type::TraitObject(_) => true,
-        syn::Type::Reference(r) => is_dyn(&r.elem),
-        syn::Type::Path(p) => {
-            for seg in &p.path.segments {
-                let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
-                    continue
-                };
-                for arg in &args.args {
-                    let syn::GenericArgument::Type(ty) = arg else {
-                        continue
-                    };
-                    if is_dyn(ty) {
-                        return true
-                    }
-                }
-            }
-            false
-        },
-        _ => false,
     }
 }
 
