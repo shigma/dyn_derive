@@ -1,63 +1,90 @@
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
+use quote::{format_ident, quote, ToTokens};
 
 pub fn main(input: TokenStream) -> TokenStream {
     let mut item: syn::ItemTrait = syn::parse2(input).expect("expect trait");
+    let ident = &item.ident;
+    let mut impls = vec![];
     for param in &mut item.supertraits {
         let syn::TypeParamBound::Trait(bound) = param else {
             continue;
         };
-        if bound.path.is_ident("Clone") {
-            bound.path = syn::parse_quote! { dyn_traits::DynClone };
-        } else if bound.path.is_ident("PartialEq") {
-            bound.path = syn::parse_quote! { dyn_traits::DynPartialEq };
-        } else if bound.path.is_ident("PartialOrd") {
-            bound.path = syn::parse_quote! { dyn_traits::DynPartialEq };
-        } else if bound.path.is_ident("Neg") {
-            bound.path = syn::parse_quote! { dyn_traits::DynNeg };
-        } else if bound.path.is_ident("Not") {
-            bound.path = syn::parse_quote! { dyn_traits::DynNot };
-        } else if bound.path.is_ident("Add") {
-            bound.path = syn::parse_quote! { dyn_traits::DynAdd };
-        } else if bound.path.is_ident("Sub") {
-            bound.path = syn::parse_quote! { dyn_traits::DynSub };
-        } else if bound.path.is_ident("Mul") {
-            bound.path = syn::parse_quote! { dyn_traits::DynMul };
-        } else if bound.path.is_ident("Div") {
-            bound.path = syn::parse_quote! { dyn_traits::DynDiv };
-        } else if bound.path.is_ident("Rem") {
-            bound.path = syn::parse_quote! { dyn_traits::DynRem };
-        } else if bound.path.is_ident("BitAnd") {
-            bound.path = syn::parse_quote! { dyn_traits::DynBitAnd };
-        } else if bound.path.is_ident("BitOr") {
-            bound.path = syn::parse_quote! { dyn_traits::DynBitOr };
-        } else if bound.path.is_ident("BitXor") {
-            bound.path = syn::parse_quote! { dyn_traits::DynBitXor };
-        } else if bound.path.is_ident("Shl") {
-            bound.path = syn::parse_quote! { dyn_traits::DynShl };
-        } else if bound.path.is_ident("Shr") {
-            bound.path = syn::parse_quote! { dyn_traits::DynShr };
-        } else if bound.path.is_ident("AddAssign") {
-            bound.path = syn::parse_quote! { dyn_traits::DynAddAssign };
-        } else if bound.path.is_ident("SubAssign") {
-            bound.path = syn::parse_quote! { dyn_traits::DynSubAssign };
-        } else if bound.path.is_ident("MulAssign") {
-            bound.path = syn::parse_quote! { dyn_traits::DynMulAssign };
-        } else if bound.path.is_ident("DivAssign") {
-            bound.path = syn::parse_quote! { dyn_traits::DynDivAssign };
-        } else if bound.path.is_ident("RemAssign") {
-            bound.path = syn::parse_quote! { dyn_traits::DynRemAssign };
-        } else if bound.path.is_ident("BitAndAssign") {
-            bound.path = syn::parse_quote! { dyn_traits::DynBitAndAssign };
-        } else if bound.path.is_ident("BitOrAssign") {
-            bound.path = syn::parse_quote! { dyn_traits::DynBitOrAssign };
-        } else if bound.path.is_ident("BitXorAssign") {
-            bound.path = syn::parse_quote! { dyn_traits::DynBitXorAssign };
-        } else if bound.path.is_ident("ShlAssign") {
-            bound.path = syn::parse_quote! { dyn_traits::DynShlAssign };
-        } else if bound.path.is_ident("ShrAssign") {
-            bound.path = syn::parse_quote! { dyn_traits::DynShrAssign };
+        let op = bound.path.to_token_stream().to_string();
+        match op.as_str() {
+            "Clone" => {
+                bound.path = syn::parse_quote! { dyn_traits::DynClone };
+                impls.push(quote! {
+                    impl Clone for Box<dyn #ident> {
+                        fn clone(&self) -> Self {
+                            dyn_traits::ptr::convert_to_box(self, dyn_traits::DynClone::dyn_clone)
+                        }
+                    }
+                });
+            },
+            "PartialEq" | "PartialOrd" => {
+                let name = format_ident!("{}", op);
+                let (method, dyn_method, return_type) = match op.as_str() {
+                    "PartialEq" => (quote!(eq), quote!(dyn_eq), quote!(bool)),
+                    "PartialOrd" => (quote!(partial_cmp), quote!(dyn_partial_cmp), quote!(Option<core::cmp::Ordering>)),
+                    _ => unreachable!(),
+                };
+                bound.path = syn::parse_quote! { dyn_traits::cmp::#name };
+                impls.push(quote! {
+                    impl core::cmp::#name for dyn #ident {
+                        fn #method(&self, other: &Self) -> #return_type {
+                            self.#dyn_method(other.as_any())
+                        }
+                    }
+                });
+            },
+            "Neg" | "Not" => {
+                let name = format_ident!("{}", op);
+                let method = format_ident!("{}", op.to_lowercase());
+                let dyn_method = format_ident!("dyn_{}", method);
+                bound.path = syn::parse_quote! { dyn_traits::ops::#name };
+                impls.push(quote! {
+                    impl std::ops::#name for Box<dyn #ident> {
+                        type Output = Self;
+                        fn #method(self) -> Self {
+                            dyn_traits::ptr::convert_into_box(self, |m| m.#dyn_method())
+                        }
+                    }
+                });
+            },
+            "Add" | "Sub" | "Mul" | "Div" | "Rem" |
+            "BitAnd" | "BitOr" | "BitXor" | "Shl" | "Shr" => {
+                let name = format_ident!("{}", op);
+                let method = format_ident!("{}", op.to_lowercase());
+                let dyn_method = format_ident!("dyn_{}", method);
+                bound.path = syn::parse_quote! { dyn_traits::ops::#name };
+                impls.push(quote! {
+                    impl std::ops::#name for Box<dyn #ident> {
+                        type Output = Self;
+                        fn #method(self, other: Self) -> Self {
+                            dyn_traits::ptr::convert_into_box(self, |m| m.#dyn_method(other.as_any_box()))
+                        }
+                    }
+                });
+            },
+            "AddAssign" | "SubAssign" | "MulAssign" | "DivAssign" | "RemAssign" |
+            "BitAndAssign" | "BitOrAssign" | "BitXorAssign" | "ShlAssign" | "ShrAssign" => {
+                let name = format_ident!("{}", op);
+                let method = format_ident!("{}_assign", op[0..op.len() - 6].to_lowercase());
+                let dyn_method = format_ident!("dyn_{}_assign", method);
+                bound.path = syn::parse_quote! { dyn_traits::ops::#name };
+                impls.push(quote! {
+                    impl std::ops::#name for Box<dyn #ident> {
+                        fn #method(&mut self, other: Self) {
+                            self.#dyn_method(other.as_any_box())
+                        }
+                    }
+                });
+            },
+            _ => {},
         }
     }
-    item.to_token_stream()
+    quote! {
+        #item
+        #(#impls)*
+    }
 }
