@@ -17,7 +17,7 @@ pub struct Foo {
 }
 ```
 
-This crate provides a procedural macro to allow you to derive object-unsafe traits:
+This crate provides a procedural macro for deriving object-unsafe traits:
 
 ```rust
 use dynex::*;
@@ -110,3 +110,15 @@ fn main() {
     assert_eq!(foo3.meta.0, "114514");
 }
 ```
+
+## Credit
+
+The crate is inspired by the following crates:
+
+- [as-any](https://github.com/fogti/as-any)
+- [dyn-clone](https://github.com/dtolnay/dyn-clone)
+- [partial_eq_dyn](https://github.com/StamesJames/partial_eq_dyn)
+
+## License
+
+MIT.

@@ -1,3 +1,5 @@
+//! Core functionality for the [`dynex`](https://docs.rs/dynex) crate.
+
 pub mod any;
 pub mod cmp;
 pub mod ops;

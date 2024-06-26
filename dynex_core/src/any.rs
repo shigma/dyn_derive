@@ -1,6 +1,7 @@
 use core::any::Any;
 
-/// This trait is an extension trait to [`Any`], and adds methods to retrieve a `&dyn Any`
+/// This trait is the base trait for all the `dynex` traits,
+/// and adds methods to retrieve a `&dyn Any`.
 pub trait Dyn: Any {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -29,20 +30,20 @@ impl<T: Any> Dyn for T {
 /// on runtime polymorphic traits (which are `!Sized`).
 pub trait Downcast: Dyn {
     /// Returns `true` if the boxed type is the same as `T`.
-    ///
-    /// Forward to the method defined on the type `Any`.
     #[inline]
     fn is<T: Dyn>(&self) -> bool {
         self.as_any().is::<T>()
     }
 
-    /// Forward to the method defined on the type `Any`.
+    /// Returns some reference to the inner value if it is of type `T`,
+    /// or `None` if it isn't.
     #[inline]
     fn downcast_ref<T: Dyn>(&self) -> Option<&T> {
         self.as_any().downcast_ref()
     }
 
-    /// Forward to the method defined on the type `Any`.
+    /// Returns some mutable reference to the inner value
+    /// if it is of type `T`, or `None` if it isn't.
     #[inline]
     fn downcast_mut<T: Dyn>(&mut self) -> Option<&mut T> {
         self.as_any_mut().downcast_mut()
