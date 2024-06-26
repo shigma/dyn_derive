@@ -3,7 +3,7 @@ use std::fmt::Debug;
 #[macro_use]
 extern crate dynex;
 
-#[dyn_impl]
+#[dyn_trait]
 pub trait Meta: Debug + PartialEq + Clone + Add {}
 
 #[test]
