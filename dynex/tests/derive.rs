@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 #[macro_use]
-extern crate dyn_derive;
+extern crate dynex;
 
 #[dyn_impl]
 pub trait Meta: Debug + PartialEq + Clone + Add {}
@@ -48,7 +48,4 @@ fn derive() {
     assert_eq!(bar1, Bar { meta: Box::new(MetaImpl { name: "foo".into() }) });
     let bar3 = bar1 + bar2;
     println!("{:?}", bar3);
-
-    // assert_eq!(bar3.foo.magic(), 42);
-    panic!();
 }

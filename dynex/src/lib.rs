@@ -8,7 +8,6 @@ pub fn derive_partial_eq(input: TokenStream) -> TokenStream {
     derive::partial_eq::derive(input.into()).into()
 }
 
-#[doc(hidden)]
 #[proc_macro_attribute]
 pub fn dyn_impl(attrs: TokenStream, input: TokenStream) -> TokenStream {
     if !attrs.is_empty() {

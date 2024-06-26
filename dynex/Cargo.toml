@@ -1,19 +1,19 @@
 [package]
-name = "dyn_derive"
+name = "dynex"
 version = "0.1.1"
 edition = "2021"
 license = "MIT"
 keywords = ["dynamic", "derive", "trait", "object", "partial-eq", "clone"]
 description = "Magically derive object-unsafe traits"
 readme = "README.md"
-repository = "https://github.com/shigma/dyn_traits"
-documentation = "https://docs.rs/dyn_derive"
+repository = "https://github.com/shigma/dynex"
+documentation = "https://docs.rs/dynex"
 
 [lib]
 proc-macro = true
 
 [dependencies]
-dyn_traits = { version = "0.1.1", path = "../dyn_traits" }
+dynex_core = { version = "0.1.1", path = "../dynex_core" }
 proc-macro2 = "1.0.60"
 quote = "1.0.28"
 syn = { version = "2.0.68", features = ["extra-traits", "full"] }

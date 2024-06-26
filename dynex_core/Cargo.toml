@@ -1,10 +1,10 @@
 [package]
-name = "dyn_traits"
+name = "dynex_core"
 version = "0.1.1"
 edition = "2021"
 license = "MIT"
 keywords = ["dynamic", "derive", "trait", "object", "partial-eq", "clone"]
 description = "Magically derive object-unsafe traits"
 readme = "README.md"
-repository = "https://github.com/shigma/dyn_traits"
-documentation = "https://docs.rs/dyn_traits"
+repository = "https://github.com/shigma/dynex"
+documentation = "https://docs.rs/dynex_core"

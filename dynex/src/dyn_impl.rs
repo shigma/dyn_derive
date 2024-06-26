@@ -12,11 +12,11 @@ pub fn main(input: TokenStream) -> TokenStream {
         let op = bound.path.to_token_stream().to_string();
         match op.as_str() {
             "Clone" => {
-                bound.path = syn::parse_quote! { dyn_traits::DynClone };
+                bound.path = syn::parse_quote! { dynex_core::DynClone };
                 impls.push(quote! {
                     impl Clone for Box<dyn #ident> {
                         fn clone(&self) -> Self {
-                            dyn_traits::ptr::convert_to_box(self, dyn_traits::DynClone::dyn_clone)
+                            dynex_core::ptr::convert_to_box(self, dynex_core::DynClone::dyn_clone)
                         }
                     }
                 });
@@ -28,7 +28,7 @@ pub fn main(input: TokenStream) -> TokenStream {
                     "PartialOrd" => (quote!(partial_cmp), quote!(dyn_partial_cmp), quote!(Option<core::cmp::Ordering>)),
                     _ => unreachable!(),
                 };
-                bound.path = syn::parse_quote! { dyn_traits::cmp::#name };
+                bound.path = syn::parse_quote! { dynex_core::cmp::#name };
                 impls.push(quote! {
                     impl core::cmp::#name for dyn #ident {
                         fn #method(&self, other: &Self) -> #return_type {
@@ -41,12 +41,12 @@ pub fn main(input: TokenStream) -> TokenStream {
                 let name = format_ident!("{}", op);
                 let method = format_ident!("{}", op.to_lowercase());
                 let dyn_method = format_ident!("dyn_{}", method);
-                bound.path = syn::parse_quote! { dyn_traits::ops::#name };
+                bound.path = syn::parse_quote! { dynex_core::ops::#name };
                 impls.push(quote! {
                     impl std::ops::#name for Box<dyn #ident> {
                         type Output = Self;
                         fn #method(self) -> Self {
-                            dyn_traits::ptr::convert_into_box(self, |m| m.#dyn_method())
+                            dynex_core::ptr::convert_into_box(self, |m| m.#dyn_method())
                         }
                     }
                 });
@@ -56,12 +56,12 @@ pub fn main(input: TokenStream) -> TokenStream {
                 let name = format_ident!("{}", op);
                 let method = format_ident!("{}", op.to_lowercase());
                 let dyn_method = format_ident!("dyn_{}", method);
-                bound.path = syn::parse_quote! { dyn_traits::ops::#name };
+                bound.path = syn::parse_quote! { dynex_core::ops::#name };
                 impls.push(quote! {
                     impl std::ops::#name for Box<dyn #ident> {
                         type Output = Self;
                         fn #method(self, other: Self) -> Self {
-                            dyn_traits::ptr::convert_into_box(self, |m| m.#dyn_method(other.as_any_box()))
+                            dynex_core::ptr::convert_into_box(self, |m| m.#dyn_method(other.as_any_box()))
                         }
                     }
                 });
@@ -71,7 +71,7 @@ pub fn main(input: TokenStream) -> TokenStream {
                 let name = format_ident!("{}", op);
                 let method = format_ident!("{}_assign", op[0..op.len() - 6].to_lowercase());
                 let dyn_method = format_ident!("dyn_{}_assign", method);
-                bound.path = syn::parse_quote! { dyn_traits::ops::#name };
+                bound.path = syn::parse_quote! { dynex_core::ops::#name };
                 impls.push(quote! {
                     impl std::ops::#name for Box<dyn #ident> {
                         fn #method(&mut self, other: Self) {
