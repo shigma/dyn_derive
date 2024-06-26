@@ -1,20 +1,17 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use super::utils::is_dyn;
-
 pub fn derive(input: TokenStream) -> TokenStream {
     let item: syn::DeriveInput = syn::parse2(input).expect("expect struct or enum");
-    let item_ident = &item.ident;
-    let item_data = &item.data;
-    let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
-    let output = match item_data {
+    let ident = &item.ident;
+    let (impl_gen, ty_gen, where_clause) = item.generics.split_for_impl();
+    let output = match &item.data {
         syn::Data::Struct(data) => cmp_struct(data),
         syn::Data::Enum(data) => cmp_enum(data),
         syn::Data::Union(_) => panic!("cannot derive dyn traits for unions"),
     };
     quote! {
-        impl #impl_generics PartialEq for #item_ident #ty_generics #where_clause {
+        impl #impl_gen PartialEq for #ident #ty_gen #where_clause {
             fn eq(&self, other: &Self) -> bool {
                 #output
             }
@@ -22,15 +19,11 @@ pub fn derive(input: TokenStream) -> TokenStream {
     }
 }
 
-fn cmp_field_iter<'i, T: Iterator<Item = (String, TokenStream, &'i syn::Field)>>(iter: T, wrap: fn(TokenStream) -> TokenStream) -> Option<(TokenStream, TokenStream, TokenStream)> {
-    iter.fold(None, |acc, (name, pref, field)| {
+fn cmp_field_iter<'i, T: Iterator<Item = (String, TokenStream)>>(iter: T, wrap: fn(TokenStream) -> TokenStream) -> Option<(TokenStream, TokenStream, TokenStream)> {
+    iter.fold(None, |acc, (name, pref)| {
         let lhs = format_ident!("l_{}", name.to_string());
         let rhs = format_ident!("r_{}", name.to_string());
-        let expr = if is_dyn(&field.ty) {
-            quote! { #lhs.dyn_eq(dyn_traits::Dyn::as_any(#rhs.as_ref())) }
-        } else {
-            quote! { #lhs.eq(#rhs) }
-        };
+        let expr = quote! { #lhs == #rhs };
         let lhs = quote! { #pref #lhs };
         let rhs = quote! { #pref #rhs };
         acc.map(|(acc0, acc1, acc2)| (
@@ -46,12 +39,12 @@ fn cmp_fields(fields: &syn::Fields) -> Option<(TokenStream, TokenStream, TokenSt
         syn::Fields::Named(fields) => {
             cmp_field_iter(fields.named.iter().map(|f| {
                 let ident = f.ident.as_ref().expect("ident");
-                (ident.to_string(), quote!(#ident:), f)
+                (ident.to_string(), quote!(#ident:))
             }), |ts| quote! { {#ts} })
         },
         syn::Fields::Unnamed(fields) => {
-            cmp_field_iter(fields.unnamed.iter().enumerate().map(|(index, f)| {
-                (index.to_string(), quote!(), f)
+            cmp_field_iter(fields.unnamed.iter().enumerate().map(|(index, _)| {
+                (index.to_string(), quote!())
             }), |ts| quote! { (#ts) })
         },
         syn::Fields::Unit => None,
