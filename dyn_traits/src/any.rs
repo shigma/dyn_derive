@@ -24,7 +24,7 @@ impl<T: Any> Dyn for T {
     }
 }
 
-/// This is a shim around `AaAny` to avoid some boilerplate code.
+/// This is a shim around `Dyn` to avoid some boilerplate code.
 /// It is a separate trait because it is also implemented
 /// on runtime polymorphic traits (which are `!Sized`).
 pub trait Downcast: Dyn {

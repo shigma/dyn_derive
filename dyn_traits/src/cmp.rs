@@ -1,7 +1,9 @@
 use core::any::Any;
 use core::cmp;
 
-pub trait PartialEq: Any {
+use crate::Dyn;
+
+pub trait PartialEq: Dyn {
     fn dyn_eq(&self, other: &dyn Any) -> bool;
 }
 
@@ -12,7 +14,7 @@ impl<T: Any + cmp::PartialEq> PartialEq for T {
     }
 }
 
-pub trait PartialOrd: Any {
+pub trait PartialOrd: Dyn {
     fn dyn_partial_cmp(&self, other: &dyn Any) -> Option<cmp::Ordering>;
 }
 

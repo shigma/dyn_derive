@@ -1,12 +1,14 @@
 use core::any::Any;
 
+use crate::Dyn;
+
 macro_rules! unary {
     ($trait:ident, $method:ident, $original:ident) => {
-        pub trait $trait: Any {
+        pub trait $trait: Dyn {
             fn $method(self: Box<Self>) -> *mut ();
         }
 
-        impl<T: Any + core::ops::$trait<Output = T>> $trait for T {
+        impl<T: Dyn + core::ops::$trait<Output = T>> $trait for T {
             #[inline]
             fn $method(self: Box<Self>) -> *mut () {
                 Box::leak(Box::from((*self).$original())) as *const T as *mut ()
@@ -17,11 +19,11 @@ macro_rules! unary {
 
 macro_rules! binary {
     ($trait:ident, $method:ident, $original:ident) => {
-        pub trait $trait: Any {
+        pub trait $trait: Dyn {
             fn $method(self: Box<Self>, other: Box<dyn Any>) -> *mut ();
         }
 
-        impl<T: Any + core::ops::$trait<Output = T>> $trait for T {
+        impl<T: Dyn + core::ops::$trait<Output = T>> $trait for T {
             #[inline]
             fn $method(self: Box<Self>, other: Box<dyn Any>) -> *mut () {
                 let other = other.downcast::<Self>().unwrap();
@@ -33,11 +35,11 @@ macro_rules! binary {
 
 macro_rules! assign {
     ($trait:ident, $method:ident, $original:ident) => {
-        pub trait $trait: Any {
+        pub trait $trait: Dyn {
             fn $method(&mut self, other: Box<dyn Any>);
         }
 
-        impl<T: Any + core::ops::$trait> $trait for T {
+        impl<T: Dyn + core::ops::$trait> $trait for T {
             #[inline]
             fn $method(&mut self, other: Box<dyn Any>) {
                 let other = other.downcast::<T>().unwrap();

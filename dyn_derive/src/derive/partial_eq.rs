@@ -27,7 +27,7 @@ fn cmp_field_iter<'i, T: Iterator<Item = (String, TokenStream, &'i syn::Field)>>
         let lhs = format_ident!("l_{}", name.to_string());
         let rhs = format_ident!("r_{}", name.to_string());
         let expr = if is_dyn(&field.ty) {
-            quote! { #lhs.dyn_eq(dyn_traits::Dyn::as_any(#rhs)) }
+            quote! { #lhs.dyn_eq(dyn_traits::Dyn::as_any(#rhs.as_ref())) }
         } else {
             quote! { #lhs.eq(#rhs) }
         };
