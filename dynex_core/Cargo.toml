@@ -1,9 +1,9 @@
 [package]
 name = "dynex_core"
-version = "0.1.1"
+version = "0.1.0"
 edition = "2021"
 license = "MIT"
-keywords = ["dynamic", "derive", "trait", "object", "partial-eq", "clone"]
+keywords = ["dyn", "derive", "trait", "partial-eq", "clone"]
 description = "Core functionality for the `dynex` crate."
 readme = "README.md"
 repository = "https://github.com/shigma/dynex"

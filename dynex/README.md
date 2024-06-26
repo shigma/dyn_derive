@@ -9,9 +9,9 @@ Inherit and derive object-unsafe traits for dynamic rust.
 For example, you cannot simply write:
 
 ```rust
-pub trait Meta: Debug + Clone + PartialEq {}
+pub trait Meta: Clone + PartialEq {}
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Foo {
     meta: Box<dyn Meta>,        // The trait `Meta` cannot be made into an object.
 }
@@ -23,9 +23,9 @@ This crate provides a procedural macro for deriving object-unsafe traits:
 use dynex::*;
 
 #[dyn_trait]
-pub trait Meta: Debug + Clone + PartialEq {}
+pub trait Meta: Clone + PartialEq {}
 
-#[derive(Debug, Clone, PartialEqFix)]
+#[derive(Clone, PartialEqFix)]
 pub struct Foo {
     meta: Box<dyn Meta>,        // Now it works!
 }
@@ -38,6 +38,7 @@ Note: `PartialEqFix` has the exact same behavior as `PartialEq`, but it workarou
 Below is a basic example of how to use this crate:
 
 ```rust
+use std::fmt::Debug;
 use dynex::*;
 
 #[dyn_trait]
@@ -71,11 +72,14 @@ fn main() {
 Taking the `Add` trait as an example:
 
 ```rust
+use std::fmt::Debug;
+use std::ops::Add;
 use dynex::*;
 
 #[dyn_trait]
-pub trait Meta: Add {}
+pub trait Meta: Debug + Add {}
 
+#[derive(Debug)]
 pub struct MetaImpl(String);
 
 impl Meta for MetaImpl {}
@@ -84,12 +88,12 @@ impl Add for MetaImpl {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
-        Self(self.0 + rhs.0)
+        Self(self.0 + &rhs.0)
     }
 }
 
 pub struct Foo {
-    meta: Box<dyn Meta>,
+    pub meta: Box<dyn Meta>,
 }
 
 impl Add for Foo {
@@ -107,7 +111,7 @@ fn main() {
     let foo1 = Foo { meta: Box::new(MetaImpl("114".into())) };
     let foo2 = Foo { meta: Box::new(MetaImpl("514".into())) };
     let foo3 = foo1 + foo2;
-    assert_eq!(foo3.meta.0, "114514");
+    println!("{:?}", foo3.meta);    // MetaImpl("114514")
 }
 ```
 
