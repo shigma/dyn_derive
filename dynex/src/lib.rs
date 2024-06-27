@@ -3,7 +3,7 @@
 use proc_macro::TokenStream;
 
 mod derive;
-mod dyn_impl;
+mod dyn_trait;
 
 /// This derive macro has the exact same behavior as `PartialEq`,
 /// but it workarounds a strange behavior of the Rust compiler.
@@ -23,6 +23,7 @@ mod dyn_impl;
 ///     meta: Box<dyn Meta>,
 /// }
 /// ```
+#[cfg(not(feature = "extra-cmp-impl"))]
 #[proc_macro_derive(PartialEqFix)]
 pub fn derive_partial_eq(input: TokenStream) -> TokenStream {
     derive::partial_eq::derive(input.into()).into()
@@ -50,5 +51,5 @@ pub fn dyn_trait(attrs: TokenStream, input: TokenStream) -> TokenStream {
     if !attrs.is_empty() {
         panic!("dyn_impl attribute does not accept any arguments")
     }
-    dyn_impl::main(input.into()).into()
+    dyn_trait::main(input.into()).into()
 }

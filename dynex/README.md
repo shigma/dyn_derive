@@ -25,13 +25,11 @@ use dynex::*;
 #[dyn_trait]
 pub trait Meta: Clone + PartialEq {}
 
-#[derive(Clone, PartialEqFix)]
+#[derive(Clone, PartialEq)]
 pub struct Foo {
     meta: Box<dyn Meta>,        // Now it works!
 }
 ```
-
-Note: `PartialEqFix` has the exact same behavior as `PartialEq`, but it workarounds a strange behavior of the Rust compiler. For other traits, you can just derive the original trait name.
 
 ## Basic Example
 
@@ -53,7 +51,7 @@ pub struct MetaImpl;
 
 impl Meta for MetaImpl {}
 
-#[derive(Debug, Clone, PartialEqFix)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Foo {
     meta: Box<dyn Meta>,
 }
@@ -114,6 +112,17 @@ fn main() {
     println!("{:?}", foo3.meta);    // MetaImpl("114514")
 }
 ```
+
+## Features
+
+### `extra-cmp-impl`
+
+There is a known issue with `PartialEq`: [rust-lang/rust#31740](https://github.com/rust-lang/rust/issues/31740). The crate provides two approaches to work around this issue:
+
+- With feature `extra-cmp-impl`: the `dyn_trait` macro will implement extra `PartialEq<&Self>`.
+- Without feature `extra-cmp-impl`: you can use `PartialEqFix` derive macro instead of `PartialEq`.
+
+This feature is enabled by default.
 
 ## Credits
 

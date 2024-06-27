@@ -12,6 +12,10 @@ documentation = "https://docs.rs/dynex"
 [lib]
 proc-macro = true
 
+[features]
+default = ["extra-cmp-impl"]
+extra-cmp-impl = []
+
 [dependencies]
 dynex_core = { version = "0.1.1", path = "../dynex_core" }
 proc-macro2 = "1.0.60"

@@ -36,6 +36,16 @@ pub fn main(input: TokenStream) -> TokenStream {
                         }
                     }
                 });
+                #[cfg(feature = "extra-cmp-impl")]
+                // Workaround Rust compiler bug:
+                // https://github.com/rust-lang/rust/issues/31740#issuecomment-700950186
+                impls.push(quote! {
+                    impl core::cmp::#name<&Self> for Box<dyn #ident> {
+                        fn #method(&self, other: &&Self) -> #return_type {
+                            self.#dyn_method(other.as_any())
+                        }
+                    }
+                });
             },
             "Neg" | "Not" => {
                 let name = format_ident!("{}", op);
