@@ -2,6 +2,7 @@
 
 use proc_macro::TokenStream;
 
+#[cfg(not(feature = "extra-cmp-impl"))]
 mod derive;
 mod dyn_trait;
 
