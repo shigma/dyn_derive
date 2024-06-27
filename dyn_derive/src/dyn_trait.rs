@@ -12,11 +12,11 @@ pub fn main(input: TokenStream) -> TokenStream {
         let op = bound.path.to_token_stream().to_string();
         match op.as_str() {
             "Clone" => {
-                bound.path = syn::parse_quote! { dyn_std::DynClone };
+                bound.path = syn::parse_quote! { dyn_std::clone::Clone };
                 impls.push(quote! {
                     impl Clone for Box<dyn #ident> {
                         fn clone(&self) -> Self {
-                            dyn_std::ptr::convert_to_box(self, dyn_std::DynClone::dyn_clone)
+                            dyn_std::Fat::to_box(self, dyn_std::clone::Clone::dyn_clone)
                         }
                     }
                 });
@@ -56,7 +56,7 @@ pub fn main(input: TokenStream) -> TokenStream {
                     impl std::ops::#name for Box<dyn #ident> {
                         type Output = Self;
                         fn #method(self) -> Self {
-                            dyn_std::ptr::convert_into_box(self, |m| m.#dyn_method())
+                            dyn_std::Fat::into_box(self, |m| m.#dyn_method())
                         }
                     }
                 });
@@ -71,7 +71,7 @@ pub fn main(input: TokenStream) -> TokenStream {
                     impl std::ops::#name for Box<dyn #ident> {
                         type Output = Self;
                         fn #method(self, other: Self) -> Self {
-                            dyn_std::ptr::convert_into_box(self, |m| m.#dyn_method(other.as_any_box()))
+                            dyn_std::Fat::into_box(self, |m| m.#dyn_method(other.as_any_box()))
                         }
                     }
                 });

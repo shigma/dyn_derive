@@ -28,7 +28,7 @@ impl<T: Any> Dyn for T {
 /// This is a shim around `Dyn` to avoid some boilerplate code.
 /// It is a separate trait because it is also implemented
 /// on runtime polymorphic traits (which are `!Sized`).
-pub trait Downcast: Dyn {
+pub trait Cast: Dyn {
     /// Returns `true` if the boxed type is the same as `T`.
     #[inline]
     fn is<T: Dyn>(&self) -> bool {
@@ -50,4 +50,27 @@ pub trait Downcast: Dyn {
     }
 }
 
-impl<T: ?Sized + Dyn> Downcast for T {}
+impl<T: ?Sized + Dyn> Cast for T {}
+
+#[doc(hidden)]
+pub trait Fat<T: ?Sized>: AsRef<T> + Sized {
+    fn into_box(self, f: impl FnOnce(Self) -> *mut ()) -> Box<T> {
+        let mut fat_ptr = self.as_ref() as *const T;
+        let data_ptr = &mut fat_ptr as *mut *const T as *mut *mut ();
+        unsafe {
+            *data_ptr = f(self);
+            Box::from_raw(fat_ptr as *mut T)
+        }
+    }
+
+    fn to_box(self, f: impl FnOnce(&T) -> *mut ()) -> Box<T> {
+        let mut fat_ptr = self.as_ref() as *const T;
+        let data_ptr = &mut fat_ptr as *mut *const T as *mut *mut ();
+        unsafe {
+            *data_ptr = f(self.as_ref());
+            Box::from_raw(fat_ptr as *mut T)
+        }
+    }
+}
+
+impl<T: ?Sized, R: AsRef<T>> Fat<T> for R {}
