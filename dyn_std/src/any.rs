@@ -1,6 +1,6 @@
 use core::any::Any;
 
-/// This trait is the base trait for all the `dynex` traits,
+/// This trait is the base trait for all the `dyn_derive` traits,
 /// and adds methods to retrieve a `&dyn Any`.
 pub trait Dyn: Any {
     fn as_any(&self) -> &dyn Any;

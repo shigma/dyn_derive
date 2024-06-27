@@ -1,0 +1,10 @@
+[package]
+name = "dyn_std"
+version = "0.1.1"
+edition = "2021"
+license = "MIT"
+keywords = ["dyn", "derive", "trait", "partial-eq", "clone"]
+description = "Dynamic (object-safe) version of std traits."
+readme = "README.md"
+repository = "https://github.com/shigma/dyn_derive"
+documentation = "https://docs.rs/dyn_std"

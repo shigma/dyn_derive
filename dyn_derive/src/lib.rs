@@ -14,7 +14,7 @@ mod dyn_trait;
 /// ## Example
 /// 
 /// ```
-/// use dynex::*;
+/// use dyn_derive::*;
 /// 
 /// #[dyn_trait]
 /// pub trait Meta: Clone + PartialEq {}
@@ -37,7 +37,7 @@ pub fn derive_partial_eq(input: TokenStream) -> TokenStream {
 /// `Clone` is not object-safe, but with this macro, you can still use `dyn Meta`:
 /// 
 /// ```
-/// use dynex::*;
+/// use dyn_derive::*;
 /// 
 /// #[dyn_trait]
 /// pub trait Meta: Clone {}

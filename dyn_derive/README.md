@@ -1,4 +1,4 @@
-# dynex
+# dyn_derive
 
 Inherit and derive object-unsafe traits for dynamic Rust.
 
@@ -20,7 +20,7 @@ pub struct Foo {
 This crate provides a procedural macro for deriving object-unsafe traits:
 
 ```rust
-use dynex::*;
+use dyn_derive::*;
 
 #[dyn_trait]
 pub trait Meta: Clone + PartialEq {}
@@ -37,7 +37,7 @@ Below is a basic example of how to use this crate:
 
 ```rust
 use std::fmt::Debug;
-use dynex::*;
+use dyn_derive::*;
 
 #[dyn_trait]
 pub trait Meta: Debug + Clone + PartialEq {
@@ -72,7 +72,7 @@ Taking the `Add` trait as an example:
 ```rust
 use std::fmt::Debug;
 use std::ops::Add;
-use dynex::*;
+use dyn_derive::*;
 
 #[dyn_trait]
 pub trait Meta: Debug + Add {}

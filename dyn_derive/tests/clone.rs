@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use dynex::*;
+use dyn_derive::*;
 
 #[dyn_trait]
 pub trait Meta: Debug + Clone {

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-  "dynex_core",
-  "dynex",
+  "dyn_std",
+  "dyn_derive",
 ]
