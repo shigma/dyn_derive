@@ -1,6 +1,7 @@
 use core::any::Any;
 
 use crate::Dyn;
+use crate::inst::Instance;
 
 macro_rules! unary {
     ($trait:ident, $method:ident, $original:ident) => {
@@ -12,6 +13,14 @@ macro_rules! unary {
             #[inline]
             fn $method(self: Box<Self>) -> *mut () {
                 Box::leak(Box::from((*self).$original())) as *const T as *mut ()
+            }
+        }
+
+        impl<T: core::ops::$trait<Output = T>, U> core::ops::$trait for Instance<T, U> {
+            type Output = Self;
+            #[inline]
+            fn $original(self) -> Self {
+                Self::new(self.0.$original())
             }
         }
     };
@@ -30,6 +39,14 @@ macro_rules! binary {
                 Box::leak(Box::from((*self).$original(*other))) as *const T as *mut ()
             }
         }
+
+        impl<T: core::ops::$trait<Output = T>, U> core::ops::$trait for Instance<T, U> {
+            type Output = Self;
+            #[inline]
+            fn $original(self, other: Self) -> Self {
+                Self::new(self.0.$original(other.0))
+            }
+        }
     };
 }
 
@@ -44,6 +61,13 @@ macro_rules! assign {
             fn $method(&mut self, other: Box<dyn Any>) {
                 let other = other.downcast::<T>().unwrap();
                 self.$original(*other);
+            }
+        }
+
+        impl<T: core::ops::$trait, U> core::ops::$trait for Instance<T, U> {
+            #[inline]
+            fn $original(&mut self, other: Self) {
+                self.0.$original(other.0)
             }
         }
     };

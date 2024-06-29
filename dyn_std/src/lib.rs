@@ -4,6 +4,7 @@
 
 pub mod any;
 pub mod cmp;
+pub mod inst;
 pub mod map;
 pub mod ops;
 pub mod clone;
