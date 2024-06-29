@@ -75,7 +75,7 @@ use std::ops::Add;
 use dyn_derive::*;
 
 #[dyn_trait]
-pub trait Meta: Debug + Add {}
+pub trait Meta: Sized + Debug + Add {}
 
 #[derive(Debug)]
 pub struct MetaImpl(String);

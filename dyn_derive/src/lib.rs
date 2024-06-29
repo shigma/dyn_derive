@@ -49,8 +49,5 @@ pub fn derive_partial_eq(input: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro_attribute]
 pub fn dyn_trait(attrs: TokenStream, input: TokenStream) -> TokenStream {
-    if !attrs.is_empty() {
-        panic!("dyn_impl attribute does not accept any arguments")
-    }
-    dyn_trait::main(input.into()).into()
+    dyn_trait::main(attrs.into(), input.into()).into()
 }
