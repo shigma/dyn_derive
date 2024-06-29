@@ -22,6 +22,14 @@ impl<S1> Map1<S1> for Option<S1> {
     }
 }
 
+impl<S1> Map1<S1> for Vec<S1> {
+    type Output<T1> = Vec<T1>;
+    #[inline]
+    fn map<T1>(self, f1: fn(S1) -> T1) -> Self::Output<T1> {
+        self.into_iter().map(f1).collect()
+    }
+}
+
 impl<S1, S2> Map2<S1, S2> for Result<S1, S2> {
     type Output<T1, T2> = Result<T1, T2>;
     #[inline]

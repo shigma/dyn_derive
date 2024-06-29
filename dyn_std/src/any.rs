@@ -1,6 +1,6 @@
 use core::any::Any;
 
-/// This trait is the base trait for all the `dyn_derive` traits,
+/// This trait is the base trait for most of `dyn_std` traits,
 /// and adds methods to retrieve a `&dyn Any`.
 pub trait Dyn: Any {
     fn as_any(&self) -> &dyn Any;
@@ -28,7 +28,8 @@ impl<T: Any> Dyn for T {
 /// This is a shim around `Dyn` to avoid some boilerplate code.
 /// It is a separate trait because it is also implemented
 /// on runtime polymorphic traits (which are `!Sized`).
-pub trait Cast: Dyn {
+#[doc(hidden)]
+pub trait Downcast: Dyn {
     /// Returns `true` if the boxed type is the same as `T`.
     #[inline]
     fn is<T: Dyn>(&self) -> bool {
@@ -50,7 +51,7 @@ pub trait Cast: Dyn {
     }
 }
 
-impl<T: ?Sized + Dyn> Cast for T {}
+impl<T: ?Sized + Dyn> Downcast for T {}
 
 #[doc(hidden)]
 pub trait Fat<T: ?Sized>: AsRef<T> + Sized {

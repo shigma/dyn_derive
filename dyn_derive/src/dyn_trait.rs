@@ -5,7 +5,7 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
     let mut cons: syn::ItemTrait = syn::parse2(input).expect("expect trait");
     let mut inst = cons.clone();
     let inst_ident = &inst.ident;
-    let cons_ident = format_ident!("{}Constructor", inst_ident);
+    let cons_ident = format_ident!("{}Static", inst_ident);
     let mut super_impls = vec![];
     cons.ident = cons_ident.clone();
     let mut is_sized = false;
@@ -114,6 +114,7 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
     if !is_sized {
         cons.supertraits.push(syn::parse_quote! { Sized });
     }
+    cons.supertraits.push(syn::parse_quote! { 'static });
     let self_repl: syn::Type = syn::parse_quote! { Box<dyn #inst_ident> };
     let mut cons_items = vec![];
     for item in &mut inst.items {

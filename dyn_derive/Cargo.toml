@@ -1,6 +1,6 @@
 [package]
 name = "dyn_derive"
-version = "0.1.2"
+version = "0.2.1"
 edition = "2021"
 license = "MIT"
 keywords = ["dyn", "derive", "trait", "partial-eq", "clone"]
@@ -17,7 +17,7 @@ default = ["extra-cmp-impl"]
 extra-cmp-impl = []
 
 [dependencies]
-dyn_std = { version = "0.1.1", path = "../dyn_std" }
+dyn_std = { version = "0.2.0", path = "../dyn_std" }
 proc-macro2 = "1.0.60"
 quote = "1.0.28"
 syn = { version = "2.0.68", features = ["extra-traits", "full"] }
