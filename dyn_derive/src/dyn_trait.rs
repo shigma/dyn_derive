@@ -124,12 +124,11 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                 if recv_arg.is_none() {
                     inst_fn.sig.inputs.insert(0, syn::parse_quote! { &self });
                 }
-                // let path_indices = vec![];
-                let has_self_output = match &mut inst_fn.sig.output {
+                let occurrence = match &mut inst_fn.sig.output {
                     syn::ReturnType::Type(_, ty) => {
-                        subst_type(ty.as_mut(), &self_repl)
+                        Occurrence::substitute(ty.as_mut(), &self_repl)
                     },
-                    _ => false,
+                    _ => Occurrence::None,
                 };
                 let mut impl_fn = inst_fn.clone();
                 impl_fn.attrs.push(syn::parse_quote! { #[inline] });
@@ -144,12 +143,9 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                         syn::FnArg::Receiver(_) => recv_arg.clone(),
                     }
                 });
-                let mut body = quote! {
+                let body = occurrence.transform(quote! {
                     <T as #cons_ident>::#ident(#(#args),*)
-                };
-                if has_self_output {
-                    body = quote! { Box::new(#body) };
-                }
+                });
                 impl_fn.default = Some(syn::parse_quote! {{ #body }});
                 cons_items.push(impl_fn);
             },
@@ -166,17 +162,65 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
     }
 }
 
-fn subst_type(ty: &mut syn::Type, repl: &syn::Type) -> bool {
-    match ty {
-        syn::Type::Path(tp) => {
-            let name = tp.path.to_token_stream().to_string();
-            if name == "Self" {
-                *ty = repl.clone();
-                return true
-            }
-            // tp.path
-        },
-        _ => {},
+#[derive(Debug, Clone)]
+enum Occurrence {
+    Exact,
+    Args(Vec<Occurrence>, Vec<syn::Type>),
+    None,
+}
+
+impl Occurrence {
+    fn substitute(ty: &mut syn::Type, repl: &syn::Type) -> Self {
+        match ty {
+            syn::Type::Path(tp) => {
+                let name = tp.path.to_token_stream().to_string();
+                if name == "Self" {
+                    *ty = repl.clone();
+                    return Self::Exact
+                }
+                let syn::PathArguments::AngleBracketed(args) = &mut tp.path.segments.last_mut().unwrap().arguments else {
+                    return Self::None
+                };
+                let mut nothing = true;
+                let mut ts = args.args
+                    .iter_mut()
+                    .filter_map(|arg| {
+                        match arg {
+                            syn::GenericArgument::Type(ty) => Some(ty),
+                            _ => None,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let os = ts.iter_mut().map(|ty| {
+                    let o = Self::substitute(ty, repl);
+                    if !matches!(o, Self::None) {
+                        nothing = false;
+                    }
+                    o
+                }).collect::<Vec<_>>();
+                if nothing {
+                    return Self::None
+                } else {
+                    return Self::Args(os, ts.into_iter().map(|t| t.clone()).collect())
+                }
+            },
+            _ => Self::None,
+        }
     }
-    false
+
+    fn transform(&self, body: TokenStream) -> TokenStream {
+        match self {
+            Occurrence::Exact => quote! { Box::new(#body) },
+            Occurrence::None => quote! { #body },
+            Occurrence::Args(os, ts) => {
+                let len = os.len();
+                let ident = format_ident!("Map{}", len);
+                let args = os.iter().map(|o| {
+                    let body = o.transform(quote! { x });
+                    quote! { |x| #body }
+                });
+                quote! { ::dyn_std::map::#ident::map::<#(#ts),*>(#body, #(#args),*) }
+            },
+        }
+    }
 }
