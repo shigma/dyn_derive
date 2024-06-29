@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 pub struct Instance<T, U>(pub T, PhantomData<U>);
 
@@ -8,8 +8,5 @@ impl<T, U> Instance<T, U> {
     }
 }
 
-impl<T: core::fmt::Debug, U> core::fmt::Debug for Instance<T, U> {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        self.0.fmt(f)
-    }
-}
+// `Deref` and `DerefMut` are not implemented for `Instance<T, U>,`
+// because they may be confused with methods from `dyn Trait`.
