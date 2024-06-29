@@ -11,7 +11,7 @@ pub trait Meta: Debug + Clone {
 #[derive(Debug, Clone)]
 pub struct MetaImpl;
 
-impl MetaConstructor for MetaImpl {}
+impl Meta for MetaImpl {}
 
 #[derive(Debug, Clone)]
 pub struct Foo {

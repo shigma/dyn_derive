@@ -21,11 +21,12 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                 return None
             },
             "Clone" => {
-                inst_bound.path = syn::parse_quote! { dyn_std::clone::Clone };
+                inst_bound.path = syn::parse_quote! { ::dyn_std::clone::Clone };
                 super_impls.push(quote! {
                     impl Clone for Box<dyn #inst_ident> {
+                        #[inline]
                         fn clone(&self) -> Self {
-                            dyn_std::Fat::to_box(self, dyn_std::clone::Clone::dyn_clone)
+                            ::dyn_std::Fat::to_box(self, ::dyn_std::clone::Clone::dyn_clone)
                         }
                     }
                 });
@@ -37,9 +38,10 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                     "PartialOrd" => (quote!(partial_cmp), quote!(dyn_partial_cmp), quote!(Option<core::cmp::Ordering>)),
                     _ => unreachable!(),
                 };
-                inst_bound.path = syn::parse_quote! { dyn_std::cmp::#name };
+                inst_bound.path = syn::parse_quote! { ::dyn_std::cmp::#name };
                 super_impls.push(quote! {
                     impl core::cmp::#name for dyn #inst_ident {
+                        #[inline]
                         fn #method(&self, other: &Self) -> #return_type {
                             self.#dyn_method(other.as_any())
                         }
@@ -50,6 +52,7 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                 // https://github.com/rust-lang/rust/issues/31740#issuecomment-700950186
                 super_impls.push(quote! {
                     impl core::cmp::#name<&Self> for Box<dyn #inst_ident> {
+                        #[inline]
                         fn #method(&self, other: &&Self) -> #return_type {
                             self.#dyn_method(other.as_any())
                         }
@@ -60,13 +63,14 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                 let name = format_ident!("{}", op);
                 let method = format_ident!("{}", op.to_lowercase());
                 let dyn_method = format_ident!("dyn_{}", method);
-                inst_bound.path = syn::parse_quote! { dyn_std::ops::#name };
+                inst_bound.path = syn::parse_quote! { ::dyn_std::ops::#name };
                 cons_bound.path = syn::parse_quote! { #name<Output = Self> };
                 super_impls.push(quote! {
                     impl std::ops::#name for Box<dyn #inst_ident> {
                         type Output = Self;
+                        #[inline]
                         fn #method(self) -> Self {
-                            dyn_std::Fat::into_box(self, |m| m.#dyn_method())
+                            ::dyn_std::Fat::into_box(self, |m| m.#dyn_method())
                         }
                     }
                 });
@@ -76,13 +80,14 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                 let name = format_ident!("{}", op);
                 let method = format_ident!("{}", op.to_lowercase());
                 let dyn_method = format_ident!("dyn_{}", method);
-                inst_bound.path = syn::parse_quote! { dyn_std::ops::#name };
+                inst_bound.path = syn::parse_quote! { ::dyn_std::ops::#name };
                 cons_bound.path = syn::parse_quote! { #name<Output = Self> };
                 super_impls.push(quote! {
                     impl std::ops::#name for Box<dyn #inst_ident> {
                         type Output = Self;
+                        #[inline]
                         fn #method(self, other: Self) -> Self {
-                            dyn_std::Fat::into_box(self, |m| m.#dyn_method(other.as_any_box()))
+                            ::dyn_std::Fat::into_box(self, |m| m.#dyn_method(other.as_any_box()))
                         }
                     }
                 });
@@ -92,9 +97,10 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                 let name = format_ident!("{}", op);
                 let method = format_ident!("{}_assign", op[0..op.len() - 6].to_lowercase());
                 let dyn_method = format_ident!("dyn_{}_assign", method);
-                inst_bound.path = syn::parse_quote! { dyn_std::ops::#name };
+                inst_bound.path = syn::parse_quote! { ::dyn_std::ops::#name };
                 super_impls.push(quote! {
                     impl std::ops::#name for Box<dyn #inst_ident> {
+                        #[inline]
                         fn #method(&mut self, other: Self) {
                             self.#dyn_method(other.as_any_box())
                         }
@@ -112,22 +118,39 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
     let mut cons_items = vec![];
     for item in &mut inst.items {
         match item {
-            syn::TraitItem::Fn(item_fn) => {
-                item_fn.default = None;
-                if item_fn.sig.receiver().is_none() {
-                    item_fn.sig.inputs.insert(0, syn::parse_quote! { &self });
+            syn::TraitItem::Fn(inst_fn) => {
+                // inst_fn.default = None;
+                let recv_arg = inst_fn.sig.receiver().map(|_| quote! { self });
+                if recv_arg.is_none() {
+                    inst_fn.sig.inputs.insert(0, syn::parse_quote! { &self });
                 }
-                match &mut item_fn.sig.output {
+                // let path_indices = vec![];
+                let has_self_output = match &mut inst_fn.sig.output {
                     syn::ReturnType::Type(_, ty) => {
-                        subst_type(ty.as_mut(), &self_repl);
+                        subst_type(ty.as_mut(), &self_repl)
                     },
-                    _ => unreachable!("return type should be specified"),
-                }
-                let mut impl_fn = item_fn.clone();
+                    _ => false,
+                };
+                let mut impl_fn = inst_fn.clone();
+                impl_fn.attrs.push(syn::parse_quote! { #[inline] });
                 let ident = &impl_fn.sig.ident;
-                impl_fn.default = Some(syn::parse_quote! {{
-                    <T as #inst_ident>::#ident(self)
-                }});
+                let args = impl_fn.sig.inputs.iter_mut().enumerate().flat_map(|(i, arg)| {
+                    match arg {
+                        syn::FnArg::Typed(arg) => {
+                            let ident = format_ident!("arg{}", i);
+                            arg.pat = syn::parse_quote! { #ident };
+                            Some(syn::parse_quote! { #ident })
+                        },
+                        syn::FnArg::Receiver(_) => recv_arg.clone(),
+                    }
+                });
+                let mut body = quote! {
+                    <T as #cons_ident>::#ident(#(#args),*)
+                };
+                if has_self_output {
+                    body = quote! { Box::new(#body) };
+                }
+                impl_fn.default = Some(syn::parse_quote! {{ #body }});
                 cons_items.push(impl_fn);
             },
             _ => {},
@@ -143,14 +166,17 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
     }
 }
 
-fn subst_type(ty: &mut syn::Type, repl: &syn::Type) {
+fn subst_type(ty: &mut syn::Type, repl: &syn::Type) -> bool {
     match ty {
         syn::Type::Path(tp) => {
             let name = tp.path.to_token_stream().to_string();
             if name == "Self" {
                 *ty = repl.clone();
+                return true
             }
+            // tp.path
         },
         _ => {},
     }
+    false
 }
