@@ -115,6 +115,7 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
         cons.supertraits.push(syn::parse_quote! { Sized });
     }
     cons.supertraits.push(syn::parse_quote! { 'static });
+    inst.supertraits.push(syn::parse_quote! { ::dyn_std::any::Dyn });
     let inst_params = inst.generics.params.into_iter().filter_map(|param| {
         match param {
             syn::GenericParam::Type(mut param) => {
@@ -337,7 +338,7 @@ impl Occurrence {
                     let body = o.transform_expr(quote! { x });
                     quote! { |x| #body }
                 });
-                quote! { ::dyn_std::map::#ident::map::<#(#ts),*>(#body, #(#args),*) }
+                quote! { ::dyn_std::cast::#ident::map::<#(#ts),*>(#body, #(#args),*) }
             },
             Occurrence::Tuple(os) => {
                 let idents = (0..os.len()).map(|i| format_ident!("v{}", i + 1));

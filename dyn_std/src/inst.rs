@@ -1,4 +1,5 @@
 use core::marker::PhantomData;
+use std::hash::{Hash, Hasher};
 
 pub struct Instance<T, U>(pub T, PhantomData<U>);
 
@@ -8,5 +9,8 @@ impl<T, U> Instance<T, U> {
     }
 }
 
-// `Deref` and `DerefMut` are not implemented for `Instance<T, U>,`
-// because they may be confused with methods from `dyn Trait`.
+impl<T: Hash, U> Hash for Instance<T, U> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}

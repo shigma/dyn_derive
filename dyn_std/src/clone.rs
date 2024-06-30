@@ -1,5 +1,6 @@
 use crate::inst::Instance;
 
+/// Dynamic (object-safe) version of [`Clone`](https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html).
 pub trait Clone {
     fn dyn_clone(&self) -> *mut ();
 }

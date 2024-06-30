@@ -5,7 +5,7 @@ use crate::inst::Instance;
 
 macro_rules! unary {
     ($trait:ident, $method:ident, $original:ident) => {
-        pub trait $trait: Dyn {
+        pub trait $trait {
             fn $method(self: Box<Self>) -> *mut ();
         }
 
@@ -28,7 +28,7 @@ macro_rules! unary {
 
 macro_rules! binary {
     ($trait:ident, $method:ident, $original:ident) => {
-        pub trait $trait: Dyn {
+        pub trait $trait {
             fn $method(self: Box<Self>, other: Box<dyn Any>) -> *mut ();
         }
 
@@ -52,7 +52,7 @@ macro_rules! binary {
 
 macro_rules! assign {
     ($trait:ident, $method:ident, $original:ident) => {
-        pub trait $trait: Dyn {
+        pub trait $trait {
             fn $method(&mut self, other: Box<dyn Any>);
         }
 

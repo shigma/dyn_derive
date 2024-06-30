@@ -1,3 +1,5 @@
+/// Help traits for unsized coercion.
+
 macro_rules! map_trait {
     ($n:ident; $($s:ident),*; $($t:ident),*; $($f:ident),*) => {
         pub trait $n<$($s),*> {
