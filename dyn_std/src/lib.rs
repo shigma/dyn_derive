@@ -11,3 +11,4 @@ pub mod ops;
 pub mod clone;
 
 pub use any::*;
+pub use inst::*;

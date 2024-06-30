@@ -117,7 +117,18 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
     cons.supertraits.push(syn::parse_quote! { 'static });
     let inst_params = inst.generics.params.into_iter().filter_map(|param| {
         match param {
-            syn::GenericParam::Type(param) => Some(param),
+            syn::GenericParam::Type(mut param) => {
+                for bound in &mut param.bounds {
+                    match bound {
+                        syn::TypeParamBound::Trait(bound) => {
+                            let last = bound.path.segments.last_mut().unwrap();
+                            last.arguments = Default::default();
+                        },
+                        _ => {},
+                    }
+                }
+                Some(param)
+            },
             _ => None,
         }
     }).collect::<Vec<_>>();
@@ -133,15 +144,18 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
         for bound in &mut param.bounds {
             match bound {
                 syn::TypeParamBound::Trait(bound) => {
-                    let op = bound.path.to_token_stream().to_string();
-                    let name = format_ident!("{}Static", op);
-                    bound.path = syn::parse_quote! { #name };
+                    let last = bound.path.segments.last_mut().unwrap();
+                    last.ident = format_ident!("{}Static", last.ident);
                 },
                 _ => {},
             }
         }
         Some(param.clone())
     }).collect::<Vec<_>>();
+    let cons_trait = match ty_params.len() {
+        0 => quote! { #cons_ident },
+        _ => quote! { #cons_ident<#(#ty_params),*> },
+    };
     let mut cons_items = vec![];
     for item in &mut inst.items {
         match item {
@@ -151,7 +165,31 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                 if recv_arg.is_none() {
                     inst_fn.sig.inputs.insert(0, syn::parse_quote! { &self });
                 }
-                let occurrence = match &mut inst_fn.sig.output {
+                let stmts = inst_fn.sig.inputs.iter_mut().enumerate().filter_map(|(i, arg)| {
+                    let syn::FnArg::Typed(arg) = arg else {
+                        return None
+                    };
+                    let occurrence = Occurrence::substitute(&mut arg.ty, &|name| {
+                        if name == "Self" {
+                            return Some(syn::parse_quote! { Box<dyn #inst_ident> })
+                        }
+                        for param in &inst_params {
+                            if param.ident == name {
+                                let bounds = &param.bounds;
+                                return Some(syn::parse_quote! { Box<dyn #bounds> })
+                            }
+                        }
+                        None
+                    });
+                    let ident = format_ident!("v{}", i);
+                    if let Some(body) = occurrence.transform_arg(quote! { #ident }) {
+                        arg.pat = Box::new(syn::parse_quote! { #ident });
+                        Some(quote! { let #ident = #body; })
+                    } else {
+                        None
+                    }
+                }).collect::<Vec<_>>();
+                let output = match &mut inst_fn.sig.output {
                     syn::ReturnType::Type(_, ty) => {
                         Occurrence::substitute(ty.as_mut(), &|name| {
                             if name == "Self" {
@@ -160,7 +198,7 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                             for param in &inst_params {
                                 if param.ident == name {
                                     let bounds = &param.bounds;
-                                    return Some(syn::parse_quote! { Box<dyn #bounds>})
+                                    return Some(syn::parse_quote! { Box<dyn #bounds> })
                                 }
                             }
                             None
@@ -171,36 +209,32 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                 let mut impl_fn = inst_fn.clone();
                 impl_fn.attrs.push(syn::parse_quote! { #[inline] });
                 let ident = &impl_fn.sig.ident;
-                let args = impl_fn.sig.inputs.iter_mut().enumerate().flat_map(|(i, arg)| {
+                let args = impl_fn.sig.inputs.iter_mut().flat_map(|arg| {
                     match arg {
                         syn::FnArg::Typed(arg) => {
-                            let ident = format_ident!("arg{}", i);
-                            arg.pat = syn::parse_quote! { #ident };
+                            let ident = &arg.pat;
                             Some(quote! { #ident })
                         },
                         syn::FnArg::Receiver(_) => None,
                     }
                 });
                 let invocation = quote! { #ident(#(#args),*) };
-                let body = occurrence.transform(match recv_arg {
+                let body = output.transform_expr(match recv_arg {
                     Some(_) => quote! { self.0.#invocation },
-                    None => quote! { <T as #cons_ident>::#invocation },
+                    None => quote! { <T as #cons_trait>::#invocation },
                 });
-                impl_fn.default = Some(syn::parse_quote! {{ #body }});
+                impl_fn.default = Some(syn::parse_quote! {{ #(#stmts)* #body }});
                 cons_items.push(impl_fn);
             },
             _ => {},
         }
     }
-    cons_params.push(match ty_params.len() {
-        0 => syn::parse_quote! { T: #cons_ident },
-        _ => syn::parse_quote! { T: #cons_ident<#(#ty_params),*> },
-    });
+    cons_params.push(syn::parse_quote! { T: #cons_trait });
     quote! {
         #inst
         #(#super_impls)*
         #cons
-        impl<#(#cons_params),*> #inst_ident for ::dyn_std::inst::Instance<T, (#(#ty_params,)*)> #where_clause {
+        impl<#(#cons_params),*> #inst_ident for ::dyn_std::Instance<T, (#(#ty_params,)*)> #where_clause {
             #(#cons_items)*
         }
     }
@@ -211,6 +245,7 @@ enum Occurrence {
     Exact,
     Args(Vec<Occurrence>, Vec<syn::Type>),
     Tuple(Vec<Occurrence>),
+    Ref(Box<Occurrence>),
     None,
 }
 
@@ -266,19 +301,40 @@ impl Occurrence {
                     return Self::Tuple(os)
                 }
             },
+            syn::Type::Reference(tr) => {
+                let o = Self::substitute(&mut tr.elem, f);
+                if matches!(o, Self::None) {
+                    return Self::None
+                } else {
+                    return Self::Ref(Box::new(o))
+                }
+            },
             _ => Self::None,
         }
     }
 
-    fn transform(&self, body: TokenStream) -> TokenStream {
+    fn transform_arg(&self, body: TokenStream) -> Option<TokenStream> {
         match self {
-            Occurrence::Exact => quote! { Box::new(::dyn_std::inst::Instance::new(#body)) },
+            Occurrence::Exact => Some(quote! { *#body.as_any_box().downcast().unwrap() }),
+            Occurrence::Ref(o) => match o.as_ref() {
+                Occurrence::Exact => Some(quote! { #body.as_any().downcast_ref().unwrap() }),
+                Occurrence::None => None,
+                _ => unimplemented!(),
+            },
+            Occurrence::None => None,
+            _ => unimplemented!(),
+        }
+    }
+
+    fn transform_expr(&self, body: TokenStream) -> TokenStream {
+        match self {
+            Occurrence::Exact => quote! { Box::new(::dyn_std::Instance::new(#body)) },
             Occurrence::None => quote! { #body },
             Occurrence::Args(os, ts) => {
                 let len = os.len();
                 let ident = format_ident!("Map{}", len);
                 let args = os.iter().map(|o| {
-                    let body = o.transform(quote! { x });
+                    let body = o.transform_expr(quote! { x });
                     quote! { |x| #body }
                 });
                 quote! { ::dyn_std::map::#ident::map::<#(#ts),*>(#body, #(#args),*) }
@@ -287,7 +343,7 @@ impl Occurrence {
                 let idents = (0..os.len()).map(|i| format_ident!("v{}", i + 1));
                 let values = os.iter().enumerate().map(|(i, o)| {
                     let ident = format_ident!("v{}", i + 1);
-                    o.transform(quote! { #ident })
+                    o.transform_expr(quote! { #ident })
                 });
                 quote! {
                     match #body {
@@ -295,6 +351,7 @@ impl Occurrence {
                     }
                 }
             },
+            Occurrence::Ref(_) => unreachable!(),
         }
     }
 }
