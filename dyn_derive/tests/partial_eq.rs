@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+
 use dyn_derive::*;
 
 #[dyn_trait]
