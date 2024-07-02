@@ -49,5 +49,5 @@ pub fn derive_partial_eq(input: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro_attribute]
 pub fn dyn_trait(attrs: TokenStream, input: TokenStream) -> TokenStream {
-    dyn_trait::main(attrs.into(), input.into()).into()
+    dyn_trait::transform(attrs.into(), input.into()).into()
 }

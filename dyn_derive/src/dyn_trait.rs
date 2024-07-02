@@ -1,28 +1,27 @@
+use std::collections::HashMap;
+use std::mem::replace;
+
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 
-pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
-    let mut cons: syn::ItemTrait = syn::parse2(input).expect("expect trait");
-    let mut inst = cons.clone();
+fn supertraits(fact: &mut syn::ItemTrait, inst: &mut syn::ItemTrait) -> TokenStream {
+    let mut has_sized = false;
+    let mut output = quote! {};
     let inst_ident = &inst.ident;
-    let cons_ident = format_ident!("{}Static", inst_ident);
-    let mut super_impls = vec![];
-    cons.ident = cons_ident.clone();
-    let mut is_sized = false;
-    inst.supertraits = syn::punctuated::Punctuated::from_iter(cons.supertraits.iter_mut().flat_map(|param| {
-        let syn::TypeParamBound::Trait(cons_bound) = param else {
+    inst.supertraits = syn::punctuated::Punctuated::from_iter(fact.supertraits.iter_mut().flat_map(|param| {
+        let syn::TypeParamBound::Trait(fact_bound) = param else {
             return Some(param.clone())
         };
-        let mut inst_bound = cons_bound.clone();
+        let mut inst_bound = fact_bound.clone();
         let op = inst_bound.path.to_token_stream().to_string();
         match op.as_str() {
             "Sized" => {
-                is_sized = true;
+                has_sized = true;
                 return None
             },
             "Clone" => {
                 inst_bound.path = syn::parse_quote! { ::dyn_std::clone::Clone };
-                super_impls.push(quote! {
+                output.extend(quote! {
                     impl Clone for Box<dyn #inst_ident> {
                         #[inline]
                         fn clone(&self) -> Self {
@@ -39,7 +38,7 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                     _ => unreachable!(),
                 };
                 inst_bound.path = syn::parse_quote! { ::dyn_std::cmp::#name };
-                super_impls.push(quote! {
+                output.extend(quote! {
                     impl core::cmp::#name for dyn #inst_ident {
                         #[inline]
                         fn #method(&self, other: &Self) -> #return_type {
@@ -50,7 +49,7 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                 #[cfg(feature = "extra-cmp-impl")]
                 // Workaround Rust compiler bug:
                 // https://github.com/rust-lang/rust/issues/31740#issuecomment-700950186
-                super_impls.push(quote! {
+                output.extend(quote! {
                     impl core::cmp::#name<&Self> for Box<dyn #inst_ident> {
                         #[inline]
                         fn #method(&self, other: &&Self) -> #return_type {
@@ -64,8 +63,8 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                 let method = format_ident!("{}", op.to_lowercase());
                 let dyn_method = format_ident!("dyn_{}", method);
                 inst_bound.path = syn::parse_quote! { ::dyn_std::ops::#name };
-                cons_bound.path = syn::parse_quote! { #name<Output = Self> };
-                super_impls.push(quote! {
+                fact_bound.path = syn::parse_quote! { #name<Output = Self> };
+                output.extend(quote! {
                     impl std::ops::#name for Box<dyn #inst_ident> {
                         type Output = Self;
                         #[inline]
@@ -81,8 +80,8 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                 let method = format_ident!("{}", op.to_lowercase());
                 let dyn_method = format_ident!("dyn_{}", method);
                 inst_bound.path = syn::parse_quote! { ::dyn_std::ops::#name };
-                cons_bound.path = syn::parse_quote! { #name<Output = Self> };
-                super_impls.push(quote! {
+                fact_bound.path = syn::parse_quote! { #name<Output = Self> };
+                output.extend(quote! {
                     impl std::ops::#name for Box<dyn #inst_ident> {
                         type Output = Self;
                         #[inline]
@@ -98,7 +97,7 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                 let method = format_ident!("{}_assign", op[0..op.len() - 6].to_lowercase());
                 let dyn_method = format_ident!("dyn_{}_assign", method);
                 inst_bound.path = syn::parse_quote! { ::dyn_std::ops::#name };
-                super_impls.push(quote! {
+                output.extend(quote! {
                     impl std::ops::#name for Box<dyn #inst_ident> {
                         #[inline]
                         fn #method(&mut self, other: Self) {
@@ -111,14 +110,26 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
         }
         Some(syn::TypeParamBound::Trait(inst_bound))
     }));
-    if !is_sized {
-        cons.supertraits.push(syn::parse_quote! { Sized });
+    if !has_sized {
+        fact.supertraits.push(syn::parse_quote! { Sized });
     }
-    cons.supertraits.push(syn::parse_quote! { 'static });
+    fact.supertraits.push(syn::parse_quote! { 'static });
     inst.supertraits.push(syn::parse_quote! { ::dyn_std::any::Dyn });
-    let inst_params = inst.generics.params.into_iter().filter_map(|param| {
+    output
+}
+
+struct Generic {
+    param: syn::TypeParam,
+    args: Vec<syn::Type>,
+}
+
+fn collect_generics(inst: &mut syn::ItemTrait) -> HashMap<String, Generic> {
+    let mut data = HashMap::new();
+    let params = replace(&mut inst.generics.params, Default::default());
+    for param in params {
         match param {
             syn::GenericParam::Type(mut param) => {
+                // todo: multiple bounds
                 for bound in &mut param.bounds {
                     match bound {
                         syn::TypeParamBound::Trait(bound) => {
@@ -126,52 +137,88 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                             let args = std::mem::replace(&mut last.arguments, Default::default());
                             match args {
                                 syn::PathArguments::None => {
-                                    return Some((param, vec![]))
+                                    data.insert(param.ident.to_string(), Generic {
+                                        param,
+                                        args: vec![],
+                                    });
+                                    break;
                                 },
                                 syn::PathArguments::AngleBracketed(args) => {
-                                    return Some((param, args.args.into_iter().map(|arg| {
-                                        match arg {
-                                            syn::GenericArgument::Type(ty) => ty,
-                                            _ => unimplemented!(),
-                                        }
-                                    }).collect::<Vec<_>>()))
+                                    data.insert(param.ident.to_string(), Generic {
+                                        param,
+                                        args: args.args.into_iter().map(|arg| {
+                                            match arg {
+                                                syn::GenericArgument::Type(ty) => ty,
+                                                _ => unimplemented!(),
+                                            }
+                                        }).collect(),
+                                    });
+                                    break;
                                 },
-                                _ => unimplemented!(),
+                                syn::PathArguments::Parenthesized(_) => unimplemented!("parenthesized bounds in trait generics"),
                             }
                         },
                         _ => {},
                     }
                 }
-                None
             },
-            _ => None,
+            syn::GenericParam::Const(_) => unimplemented!("const in trait generics"),
+            syn::GenericParam::Lifetime(_) => unimplemented!("lifetime in trait generics"),
         }
-    }).collect::<Vec<_>>();
-    let where_clause = inst.generics.where_clause;
-    inst.generics = Default::default();
-    let mut ty_params = vec![];
-    let mut cons_params = cons.generics.params.iter_mut().filter_map(|param| {
+    }
+    data
+}
+
+fn match_generics(name: String, inst_ident: &syn::Ident, generics: &HashMap<String, Generic>) -> Option<(syn::Type, syn::Type)> {
+    if name == "Self" {
+        return Some((
+            syn::parse_quote! { Box<dyn #inst_ident> },
+            syn::parse_quote! { Self },
+        ))
+    }
+    let Some(g) = generics.get(&name) else {
+        return None
+    };
+    let ident = &g.param.ident;
+    let bounds = &g.param.bounds;
+    let args = &g.args;
+    return Some((
+        syn::parse_quote! { Box<dyn #bounds> },
+        syn::parse_quote! { ::dyn_std::Instance<#ident, (#(#args,)*)> },
+    ))
+}
+
+pub fn transform(_attrs: TokenStream, input: TokenStream) -> TokenStream {
+    let mut fact: syn::ItemTrait = syn::parse2(input).expect("expect trait");
+    let mut inst = fact.clone();
+    let inst_ident = inst.ident.clone();
+    let super_impls = supertraits(&mut fact, &mut inst);
+    let fact_ident = format_ident!("{}Factory", inst_ident);
+    let inst_generics = collect_generics(&mut inst);
+    let mut fact_generic_params = vec![];
+    let mut fact_generics = fact.generics.params.iter_mut().filter_map(|param| {
         let syn::GenericParam::Type(param) = param else {
-            return None
+            unimplemented!("const or lifetime in trait generics")
         };
         let ident = &param.ident;
-        ty_params.push(quote! { #ident });
+        fact_generic_params.push(quote! { #ident });
         for bound in &mut param.bounds {
             match bound {
                 syn::TypeParamBound::Trait(bound) => {
                     let last = bound.path.segments.last_mut().unwrap();
-                    last.ident = format_ident!("{}Static", last.ident);
+                    last.ident = format_ident!("{}Factory", last.ident);
                 },
                 _ => {},
             }
         }
         Some(param.clone())
     }).collect::<Vec<_>>();
-    let cons_trait = match ty_params.len() {
-        0 => quote! { #cons_ident },
-        _ => quote! { #cons_ident<#(#ty_params),*> },
+    let fact_trait = match fact_generic_params.len() {
+        0 => quote! { #fact_ident },
+        _ => quote! { #fact_ident<#(#fact_generic_params),*> },
     };
-    let mut cons_items = vec![];
+    fact.ident = fact_ident;
+    let mut fact_items = vec![];
     for item in &mut inst.items {
         match item {
             syn::TraitItem::Fn(inst_fn) => {
@@ -180,30 +227,13 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                 if recv_arg.is_none() {
                     inst_fn.sig.inputs.insert(0, syn::parse_quote! { &self });
                 }
-                let f = |name| {
-                    if name == "Self" {
-                        return Some((
-                            syn::parse_quote! { Box<dyn #inst_ident> },
-                            syn::parse_quote! { Self },
-                        ))
-                    }
-                    for (param, args) in &inst_params {
-                        if param.ident == name {
-                            let bounds = &param.bounds;
-                            let ident = &param.ident;
-                            return Some((
-                                syn::parse_quote! { Box<dyn #bounds> },
-                                syn::parse_quote! { ::dyn_std::Instance<#ident, (#(#args,)*)> },
-                            ))
-                        }
-                    }
-                    None
-                };
                 let stmts = inst_fn.sig.inputs.iter_mut().enumerate().filter_map(|(i, arg)| {
                     let syn::FnArg::Typed(arg) = arg else {
                         return None
                     };
-                    let occurrence = Occurrence::substitute(&mut arg.ty, &f);
+                    let occurrence = Occurrence::substitute(&mut arg.ty, &|name| {
+                        match_generics(name, &inst_ident, &inst_generics)
+                    });
                     let ident = format_ident!("v{}", i);
                     if let Some(body) = occurrence.downcast_expr(quote! { #ident }) {
                         arg.pat = Box::new(syn::parse_quote! { #ident });
@@ -214,7 +244,9 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                 }).collect::<Vec<_>>();
                 let output = match &mut inst_fn.sig.output {
                     syn::ReturnType::Type(_, ty) => {
-                        Occurrence::substitute(ty.as_mut(), &f)
+                        Occurrence::substitute(ty.as_mut(), &|name| {
+                            match_generics(name, &inst_ident, &inst_generics)
+                        })
                     },
                     _ => Occurrence::None,
                 };
@@ -233,21 +265,24 @@ pub fn main(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                 let invocation = quote! { #ident(#(#args),*) };
                 let body = output.upcast_expr(match recv_arg {
                     Some(_) => quote! { self.0.#invocation },
-                    None => quote! { <T as #cons_trait>::#invocation },
+                    None => quote! { <Factory as #fact_trait>::#invocation },
                 });
                 impl_fn.default = Some(syn::parse_quote! {{ #(#stmts)* #body }});
-                cons_items.push(impl_fn);
+                fact_items.push(impl_fn);
             },
             _ => {},
         }
     }
-    cons_params.push(syn::parse_quote! { T: #cons_trait });
+    fact_generics.push(syn::parse_quote! { Factory: #fact_trait });
+    let fact = &fact;
+    let inst = &inst;
+    let where_clause = &inst.generics.where_clause;
     quote! {
         #inst
-        #(#super_impls)*
-        #cons
-        impl<#(#cons_params),*> #inst_ident for ::dyn_std::Instance<T, (#(#ty_params,)*)> #where_clause {
-            #(#cons_items)*
+        #super_impls
+        #fact
+        impl<#(#fact_generics),*> #inst_ident for ::dyn_std::Instance<Factory, (#(#fact_generic_params,)*)> #where_clause {
+            #(#fact_items)*
         }
     }
 }

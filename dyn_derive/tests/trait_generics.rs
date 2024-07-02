@@ -1,4 +1,5 @@
-use std::{collections::HashMap, fmt::Debug};
+use std::collections::HashMap;
+use std::fmt::Debug;
 
 use dyn_derive::*;
 use dyn_std::Instance;
@@ -14,7 +15,7 @@ pub trait Value<E: Error>: Debug + Clone + PartialEq {
 }
 
 #[dyn_trait]
-pub trait Context<E: Error, V: Value<E>>: Debug {
+pub trait Context<E: Error, V: Value<E>> {
     fn get(&self, name: &str) -> Option<V>;
     fn set(&mut self, name: &str, value: V);
 }
@@ -22,12 +23,12 @@ pub trait Context<E: Error, V: Value<E>>: Debug {
 #[derive(Debug, PartialEq)]
 struct MyError;
 
-impl ErrorStatic for MyError {}
+impl ErrorFactory for MyError {}
 
 #[derive(Debug, Clone, PartialEq)]
 struct MyValue(u32);
 
-impl ValueStatic<MyError> for MyValue {
+impl ValueFactory<MyError> for MyValue {
     fn new(v: i32) -> Result<Self, MyError> {
         if v < 0 {
             Err(MyError)
@@ -50,7 +51,6 @@ impl ValueStatic<MyError> for MyValue {
     }
 }
 
-#[derive(Debug)]
 pub struct MyContext {
     store: HashMap<String, MyValue>,
 }
@@ -63,7 +63,7 @@ impl MyContext{
     }
 }
 
-impl ContextStatic<MyError, MyValue> for MyContext {
+impl ContextFactory<MyError, MyValue> for MyContext {
     fn get(&self, name: &str) -> Option<MyValue> {
         self.store.get(name).cloned()
     }
