@@ -1,6 +1,6 @@
 use core::fmt::*;
 
-use crate::inst::Instance;
+use crate::Instance;
 
 macro_rules! impl_fmt_trait {
     ($t:ident) => {
