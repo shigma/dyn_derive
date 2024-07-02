@@ -8,14 +8,14 @@ use dyn_std::Instance;
 pub trait Error: Debug + PartialEq {}
 
 #[dyn_trait]
-pub trait Value<E: Error>: Debug + Clone + PartialEq {
+pub trait Value<#[dynamic] E: Error>: Debug + Clone + PartialEq {
     fn new(v: i32) -> Result<Self, E>;
     fn get(&self) -> i32;
     fn set(&mut self, v: i32) -> Result<(), E>;
 }
 
 #[dyn_trait]
-pub trait Context<E: Error, V: Value<E>> {
+pub trait Context<#[dynamic] E: Error, #[dynamic] V: Value<E>> {
     fn get(&self, name: &str) -> Option<V>;
     fn set(&mut self, name: &str, value: V);
 }
@@ -55,7 +55,7 @@ pub struct MyContext {
     store: HashMap<String, MyValue>,
 }
 
-impl MyContext{
+impl MyContext {
     pub fn new() -> Self {
         Self {
             store: Default::default(),
