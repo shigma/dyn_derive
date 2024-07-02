@@ -352,7 +352,7 @@ impl Occurrence {
                     let body = o.upcast_expr(quote! { x });
                     quote! { |x| #body }
                 });
-                quote! { ::dyn_std::cast::#ident::map::<#(#ts),*>(#body, #(#args),*) }
+                quote! { ::dyn_std::map::#ident::map::<#(#ts),*>(#body, #(#args),*) }
             },
             Occurrence::Tuple(os) => {
                 let idents = (0..os.len()).map(|i| format_ident!("v{}", i + 1));
