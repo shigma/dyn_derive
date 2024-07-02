@@ -1,6 +1,6 @@
 [package]
 name = "dyn_derive"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 license = "MIT"
 keywords = ["dyn", "derive", "trait", "partial-eq", "clone"]

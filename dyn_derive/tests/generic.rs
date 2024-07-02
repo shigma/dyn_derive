@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{collections::HashMap, fmt::Debug};
 
 use dyn_derive::*;
 use dyn_std::Instance;
@@ -7,10 +7,16 @@ use dyn_std::Instance;
 pub trait Error: Debug + PartialEq {}
 
 #[dyn_trait]
-pub trait Value<E: Error>: Debug + PartialEq {
+pub trait Value<E: Error>: Debug + Clone + PartialEq {
     fn new(v: i32) -> Result<Self, E>;
     fn get(&self) -> i32;
     fn set(&mut self, v: i32) -> Result<(), E>;
+}
+
+#[dyn_trait]
+pub trait Context<E: Error, V: Value<E>>: Debug {
+    fn get(&self, name: &str) -> Option<V>;
+    fn set(&mut self, name: &str, value: V);
 }
 
 #[derive(Debug, PartialEq)]
@@ -18,7 +24,7 @@ struct MyError;
 
 impl ErrorStatic for MyError {}
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct MyValue(u32);
 
 impl ValueStatic<MyError> for MyValue {
@@ -44,12 +50,39 @@ impl ValueStatic<MyError> for MyValue {
     }
 }
 
+#[derive(Debug)]
+pub struct MyContext {
+    store: HashMap<String, MyValue>,
+}
+
+impl MyContext{
+    pub fn new() -> Self {
+        Self {
+            store: Default::default(),
+        }
+    }
+}
+
+impl ContextStatic<MyError, MyValue> for MyContext {
+    fn get(&self, name: &str) -> Option<MyValue> {
+        self.store.get(name).cloned()
+    }
+
+    fn set(&mut self, name: &str, value: MyValue) {
+        self.store.insert(name.to_string(), value);
+    }
+}
+
 #[test]
 fn main() {
-    let v: &mut dyn Value = &mut Instance::new(MyValue::new(42).unwrap());
-    assert_eq!(v.get(), 42);
-    assert_eq!(v.set(514), Ok(()));
-    assert_eq!(v.get(), 514);
-    assert_eq!(v.set(-1), Err(Box::new(Instance::new(MyError)) as Box<dyn Error>));
-    assert_eq!(v.get(), 514);
+    let ctx: &mut dyn Context = &mut Instance::new(MyContext::new());
+    let value: &mut dyn Value = &mut Instance::new(MyValue::new(42).unwrap());
+    assert_eq!(value.get(), 42);
+    assert_eq!(value.set(514), Ok(()));
+    assert_eq!(value.get(), 514);
+    assert_eq!(value.set(-1), Err(Box::new(Instance::new(MyError)) as Box<dyn Error>));
+    assert_eq!(value.get(), 514);
+    ctx.set("x", Box::new(Instance::new(MyValue::new(114).unwrap())));
+    let value = ctx.get("x").unwrap();
+    assert_eq!(value.get(), 114);
 }
