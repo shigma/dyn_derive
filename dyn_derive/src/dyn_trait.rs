@@ -179,10 +179,19 @@ fn collect_generics(inst: &mut syn::ItemTrait) -> HashMap<String, Generic> {
     data
 }
 
-fn match_generics(name: String, inst_trait: &TokenStream, generics: &HashMap<String, Generic>) -> Option<(syn::Type, TokenStream)> {
+fn make_dyn(ident: &impl ToTokens, _is_ref: bool) -> syn::Type {
+    // if is_ref {
+    //     syn::parse_quote! { dyn #ident }
+    // } else {
+    //     syn::parse_quote! { Box<dyn #ident> }
+    // }
+    syn::parse_quote! { Box<dyn #ident> }
+}
+
+fn match_generics(name: String, inst_trait: &TokenStream, generics: &HashMap<String, Generic>, is_ref: bool) -> Option<(syn::Type, TokenStream)> {
     if name == "Self" {
         return Some((
-            syn::parse_quote! { Box<dyn #inst_trait> },
+            make_dyn(inst_trait, is_ref),
             quote! { Self },
         ))
     }
@@ -193,7 +202,7 @@ fn match_generics(name: String, inst_trait: &TokenStream, generics: &HashMap<Str
     let bounds = &g.param.bounds;
     let args = &g.args;
     return Some((
-        syn::parse_quote! { Box<dyn #bounds> },
+        make_dyn(bounds, is_ref),
         quote! { ::dyn_std::Instance::<#ident, (#(#args,)*)> },
     ))
 }
@@ -258,24 +267,31 @@ pub fn transform(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                     inst_fn.sig.inputs.insert(0, syn::parse_quote! { &self });
                 }
                 let stmts = inst_fn.sig.inputs.iter_mut().enumerate().filter_map(|(i, arg)| {
-                    let syn::FnArg::Typed(arg) = arg else {
-                        return None
-                    };
-                    let occurrence = Occurrence::substitute(&mut arg.ty, &|name| {
-                        match_generics(name, &inst_trait, &inst_generics)
-                    });
-                    let ident = format_ident!("v{}", i);
-                    if let Some(body) = occurrence.transform_input(quote! { #ident }) {
-                        arg.pat = Box::new(syn::parse_quote! { #ident });
-                        Some(quote! { let #ident = #body; })
-                    } else {
-                        None
+                    match arg {
+                        syn::FnArg::Typed(arg) => {
+                            let occurrence = Occurrence::substitute(&mut arg.ty, false, &|name, is_ref| {
+                                match_generics(name, &inst_trait, &inst_generics, is_ref)
+                            });
+                            let ident = format_ident!("v{}", i);
+                            if let Some(body) = occurrence.transform_input(quote! { #ident }) {
+                                arg.pat = Box::new(syn::parse_quote! { #ident });
+                                Some(quote! { let #ident = #body; })
+                            } else {
+                                None
+                            }
+                        },
+                        syn::FnArg::Receiver(recv) => {
+                            if recv.ty.to_token_stream().to_string() == "Self" {
+                                recv.ty = syn::parse_quote! { Box<Self> };
+                            }
+                            None
+                        },
                     }
                 }).collect::<Vec<_>>();
                 let output = match &mut inst_fn.sig.output {
                     syn::ReturnType::Type(_, ty) => {
-                        Occurrence::substitute(ty.as_mut(), &|name| {
-                            match_generics(name, &inst_trait, &inst_generics)
+                        Occurrence::substitute(ty.as_mut(), false, &|name, is_ref| {
+                            match_generics(name, &inst_trait, &inst_generics, is_ref)
                         })
                     },
                     _ => Occurrence::None,
@@ -328,11 +344,11 @@ enum Occurrence {
 }
 
 impl Occurrence {
-    fn substitute(ty: &mut syn::Type, f: &impl Fn(String) -> Option<(syn::Type, TokenStream)>) -> Self {
+    fn substitute(ty: &mut syn::Type, is_ref: bool, f: &impl Fn(String, bool) -> Option<(syn::Type, TokenStream)>) -> Self {
         match ty {
             syn::Type::Path(tp) => {
                 let name = tp.path.to_token_stream().to_string();
-                let result = f(name);
+                let result = f(name, is_ref);
                 if let Some((repl, repl2)) = result {
                     *ty = repl;
                     return Self::Exact(repl2)
@@ -351,7 +367,7 @@ impl Occurrence {
                     })
                     .collect::<Vec<_>>();
                 let os = ts.iter_mut().map(|ty| {
-                    let o = Self::substitute(ty, f);
+                    let o = Self::substitute(ty, false, f);
                     if !matches!(o, Self::None) {
                         nothing = false;
                     }
@@ -367,7 +383,7 @@ impl Occurrence {
                 let mut nothing = true;
                 let mut ts = tt.elems.iter_mut().collect::<Vec<_>>();
                 let os = ts.iter_mut().map(|ty| {
-                    let o = Self::substitute(ty, f);
+                    let o = Self::substitute(ty, false, f);
                     if !matches!(o, Self::None) {
                         nothing = false;
                     }
@@ -380,7 +396,7 @@ impl Occurrence {
                 }
             },
             syn::Type::Reference(tr) => {
-                let o = Self::substitute(&mut tr.elem, f);
+                let o = Self::substitute(&mut tr.elem, true, f);
                 if matches!(o, Self::None) {
                     return Self::None
                 } else {
@@ -397,8 +413,8 @@ impl Occurrence {
             Occurrence::Exact(ty) => Some(quote! { #ty::downcast(#expr) }),
             Occurrence::Ref(o, mutability) => match o.as_ref() {
                 Occurrence::Exact(ty) => match mutability {
-                    true => Some(quote! { #ty::downcast_mut(#expr) }),
-                    false => Some(quote! { #ty::downcast_ref(#expr) }),
+                    true => Some(quote! { #ty::downcast_mut(&mut **#expr) }),
+                    false => Some(quote! { #ty::downcast_ref(&**#expr) }),
                 },
                 Occurrence::None => None,
                 _ => unimplemented!(),
