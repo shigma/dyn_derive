@@ -128,52 +128,50 @@ fn collect_generics(inst: &mut syn::ItemTrait) -> HashMap<String, Generic> {
     let mut data = HashMap::new();
     let params = replace(&mut inst.generics.params, Default::default());
     for param in params {
-        match param {
-            syn::GenericParam::Type(mut param) => {
-                let index = param.attrs.iter().position(|attr| {
-                    attr.meta.path().is_ident("dynamic")
-                });
-                if let Some(index) = index {
-                    param.attrs.remove(index);
-                } else {
-                    inst.generics.params.push(syn::GenericParam::Type(param));
-                    continue
-                }
-                // todo: multiple bounds
-                for bound in &mut param.bounds {
-                    match bound {
-                        syn::TypeParamBound::Trait(bound) => {
-                            let last = bound.path.segments.last_mut().unwrap();
-                            let args = std::mem::replace(&mut last.arguments, Default::default());
-                            match args {
-                                syn::PathArguments::None => {
-                                    data.insert(param.ident.to_string(), Generic {
-                                        param,
-                                        args: vec![],
-                                    });
-                                    break;
-                                },
-                                syn::PathArguments::AngleBracketed(args) => {
-                                    data.insert(param.ident.to_string(), Generic {
-                                        param,
-                                        args: args.args.into_iter().map(|arg| {
-                                            match arg {
-                                                syn::GenericArgument::Type(ty) => ty,
-                                                _ => unimplemented!(),
-                                            }
-                                        }).collect(),
-                                    });
-                                    break;
-                                },
-                                syn::PathArguments::Parenthesized(_) => unimplemented!("parenthesized bounds in trait generics"),
-                            }
+        let syn::GenericParam::Type(mut param) = param else {
+            inst.generics.params.push(param);
+            continue;
+        };
+        let index = param.attrs.iter().position(|attr| {
+            attr.meta.path().is_ident("dynamic")
+        });
+        if let Some(index) = index {
+            param.attrs.remove(index);
+        } else {
+            inst.generics.params.push(syn::GenericParam::Type(param));
+            continue;
+        }
+        // todo: multiple bounds
+        for bound in &mut param.bounds {
+            match bound {
+                syn::TypeParamBound::Trait(bound) => {
+                    let last = bound.path.segments.last_mut().unwrap();
+                    let args = std::mem::replace(&mut last.arguments, Default::default());
+                    match args {
+                        syn::PathArguments::None => {
+                            data.insert(param.ident.to_string(), Generic {
+                                param,
+                                args: vec![],
+                            });
+                            break;
                         },
-                        _ => {},
+                        syn::PathArguments::AngleBracketed(args) => {
+                            data.insert(param.ident.to_string(), Generic {
+                                param,
+                                args: args.args.into_iter().map(|arg| {
+                                    match arg {
+                                        syn::GenericArgument::Type(ty) => ty,
+                                        _ => unimplemented!(),
+                                    }
+                                }).collect(),
+                            });
+                            break;
+                        },
+                        syn::PathArguments::Parenthesized(_) => unimplemented!("parenthesized bounds in trait generics"),
                     }
-                }
-            },
-            syn::GenericParam::Const(_) => unimplemented!("const in trait generics"),
-            syn::GenericParam::Lifetime(_) => unimplemented!("lifetime in trait generics"),
+                },
+                _ => {},
+            }
         }
     }
     data
@@ -209,19 +207,34 @@ fn match_generics(name: String, inst_trait: &TokenStream, generics: &HashMap<Str
 
 fn get_full_name(item: &syn::ItemTrait) -> (TokenStream, TokenStream) {
     let ident = &item.ident;
-    let params = item.generics.params.iter().map(|param| {
+    let mut generic_params = vec![];
+    let mut instance_params = vec![];
+    for param in &item.generics.params {
         match param {
             syn::GenericParam::Type(param) => {
                 let ident = &param.ident;
-                quote! { #ident }
+                generic_params.push(quote! { #ident });
+                instance_params.push(quote! { #ident });
             },
-            _ => unimplemented!("const or lifetime in trait generics"),
+            syn::GenericParam::Lifetime(param) => {
+                let lifetime = &param.lifetime;
+                generic_params.push(quote! { #lifetime });
+            },
+            syn::GenericParam::Const(_) => {
+                unimplemented!("const generics in traits")
+            },
         }
-    }).collect::<Vec<_>>();
-    match params.len() {
-        0 => (quote! { #ident }, quote! { () }),
-        _ => (quote! { #ident<#(#params),*> }, quote! { (#(#params),*,) }),
     }
+    (
+        match generic_params.len() {
+            0 => quote! { #ident },
+            _ => quote! { #ident<#(#generic_params),*> },
+        },
+        match instance_params.len() {
+            0 => quote! { () },
+            _ => quote! { (#(#instance_params),*,) },
+        },
+    )
 }
 
 pub fn transform(_attrs: TokenStream, input: TokenStream) -> TokenStream {
@@ -234,7 +247,7 @@ pub fn transform(_attrs: TokenStream, input: TokenStream) -> TokenStream {
     let super_impls = supertraits(&mut fact, &mut inst);
     fact.generics.params.iter_mut().for_each(|param| {
         let syn::GenericParam::Type(param) = param else {
-            unimplemented!("const or lifetime in trait generics")
+            return;
         };
         let index = param.attrs.iter().position(|attr| {
             attr.meta.path().is_ident("dynamic")
