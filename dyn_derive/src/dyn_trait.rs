@@ -179,11 +179,11 @@ fn collect_generics(inst: &mut syn::ItemTrait) -> HashMap<String, Generic> {
     data
 }
 
-fn match_generics(name: String, inst_trait: &TokenStream, generics: &HashMap<String, Generic>) -> Option<(syn::Type, syn::Type)> {
+fn match_generics(name: String, inst_trait: &TokenStream, generics: &HashMap<String, Generic>) -> Option<(syn::Type, TokenStream)> {
     if name == "Self" {
         return Some((
             syn::parse_quote! { Box<dyn #inst_trait> },
-            syn::parse_quote! { Self },
+            quote! { Self },
         ))
     }
     let Some(g) = generics.get(&name) else {
@@ -194,7 +194,7 @@ fn match_generics(name: String, inst_trait: &TokenStream, generics: &HashMap<Str
     let args = &g.args;
     return Some((
         syn::parse_quote! { Box<dyn #bounds> },
-        syn::parse_quote! { ::dyn_std::Instance<#ident, (#(#args,)*)> },
+        quote! { ::dyn_std::Instance::<#ident, (#(#args,)*)> },
     ))
 }
 
@@ -265,7 +265,7 @@ pub fn transform(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                         match_generics(name, &inst_trait, &inst_generics)
                     });
                     let ident = format_ident!("v{}", i);
-                    if let Some(body) = occurrence.downcast_expr(quote! { #ident }) {
+                    if let Some(body) = occurrence.transform_input(quote! { #ident }) {
                         arg.pat = Box::new(syn::parse_quote! { #ident });
                         Some(quote! { let #ident = #body; })
                     } else {
@@ -293,7 +293,7 @@ pub fn transform(_attrs: TokenStream, input: TokenStream) -> TokenStream {
                     }
                 });
                 let invocation = quote! { #ident(#(#args),*) };
-                let body = output.upcast_expr(match recv_arg {
+                let body = output.transform_output(match recv_arg {
                     Some(_) => quote! { self.0.#invocation },
                     None => quote! { <Factory as #fact_trait>::#invocation },
                 });
@@ -320,7 +320,7 @@ pub fn transform(_attrs: TokenStream, input: TokenStream) -> TokenStream {
 
 #[derive(Debug, Clone)]
 enum Occurrence {
-    Exact(syn::Type),
+    Exact(TokenStream),
     Args(Vec<Occurrence>, Vec<syn::Type>),
     Tuple(Vec<Occurrence>),
     Ref(Box<Occurrence>, bool),
@@ -328,7 +328,7 @@ enum Occurrence {
 }
 
 impl Occurrence {
-    fn substitute(ty: &mut syn::Type, f: &impl Fn(String) -> Option<(syn::Type, syn::Type)>) -> Self {
+    fn substitute(ty: &mut syn::Type, f: &impl Fn(String) -> Option<(syn::Type, TokenStream)>) -> Self {
         match ty {
             syn::Type::Path(tp) => {
                 let name = tp.path.to_token_stream().to_string();
@@ -391,43 +391,52 @@ impl Occurrence {
         }
     }
 
-    fn downcast_expr(&self, ident: TokenStream) -> Option<TokenStream> {
+    fn transform_input(&self, expr: TokenStream) -> Option<TokenStream> {
         match self {
-            Occurrence::Exact(ty) => Some(quote! { #ident.as_any_box().downcast::<#ty>().unwrap().0 }),
+            Occurrence::None => None,
+            Occurrence::Exact(ty) => Some(quote! { #ty::downcast(#expr) }),
             Occurrence::Ref(o, mutability) => match o.as_ref() {
                 Occurrence::Exact(ty) => match mutability {
-                    true => Some(quote! { &mut #ident.as_any_mut().downcast_mut::<#ty>().unwrap().0 }),
-                    false => Some(quote! { &#ident.as_any().downcast_ref::<#ty>().unwrap().0 }),
+                    true => Some(quote! { #ty::downcast_mut(#expr) }),
+                    false => Some(quote! { #ty::downcast_ref(#expr) }),
                 },
                 Occurrence::None => None,
                 _ => unimplemented!(),
             },
-            Occurrence::None => None,
-            _ => unimplemented!(),
-        }
-    }
-
-    fn upcast_expr(&self, body: TokenStream) -> TokenStream {
-        match self {
-            Occurrence::Exact(_) => quote! { Box::new(::dyn_std::Instance::new(#body)) },
-            Occurrence::None => quote! { #body },
             Occurrence::Args(os, ts) => {
                 let len = os.len();
                 let ident = format_ident!("Map{}", len);
                 let args = os.iter().map(|o| {
-                    let body = o.upcast_expr(quote! { x });
+                    let body = o.transform_input(quote! { x }).unwrap_or(quote! { x });
                     quote! { |x| #body }
                 });
-                quote! { ::dyn_std::map::#ident::map::<#(#ts),*>(#body, #(#args),*) }
+                Some(quote! { ::dyn_std::map::#ident::map::<#(#ts),*>(#expr, #(#args),*) })
+            },
+            _ => unimplemented!(),
+        }
+    }
+
+    fn transform_output(&self, expr: TokenStream) -> TokenStream {
+        match self {
+            Occurrence::Exact(_) => quote! { Box::new(::dyn_std::Instance::new(#expr)) },
+            Occurrence::None => quote! { #expr },
+            Occurrence::Args(os, ts) => {
+                let len = os.len();
+                let ident = format_ident!("Map{}", len);
+                let args = os.iter().map(|o| {
+                    let expr = o.transform_output(quote! { x });
+                    quote! { |x| #expr }
+                });
+                quote! { ::dyn_std::map::#ident::<#(#ts),*>::map(#expr, #(#args),*) }
             },
             Occurrence::Tuple(os) => {
                 let idents = (0..os.len()).map(|i| format_ident!("v{}", i + 1));
                 let values = os.iter().enumerate().map(|(i, o)| {
                     let ident = format_ident!("v{}", i + 1);
-                    o.upcast_expr(quote! { #ident })
+                    o.transform_output(quote! { #ident })
                 });
                 quote! {
-                    match #body {
+                    match #expr {
                         (#(#idents),*) => (#(#values),*)
                     }
                 }

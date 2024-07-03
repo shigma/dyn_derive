@@ -18,6 +18,7 @@ pub trait Value<#[dynamic] E: Error>: Debug + Clone + PartialEq {
 pub trait Context<#[dynamic] E: Error, #[dynamic] V: Value<E>> {
     fn get(&self, name: &str) -> Option<V>;
     fn set(&mut self, name: &str, value: V);
+    fn extend(&mut self, store: HashMap<String, V>);
 }
 
 #[derive(Debug, PartialEq)]
@@ -70,6 +71,10 @@ impl ContextFactory<MyError, MyValue> for MyContext {
 
     fn set(&mut self, name: &str, value: MyValue) {
         self.store.insert(name.to_string(), value);
+    }
+
+    fn extend(&mut self, store: HashMap<String, MyValue>) {
+        self.store.extend(store)
     }
 }
 
