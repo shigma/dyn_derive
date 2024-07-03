@@ -441,7 +441,18 @@ impl Occurrence {
                 });
                 Some(quote! { ::dyn_std::map::#ident::map::<#(#ts),*>(#expr, #(#args),*) })
             },
-            _ => unimplemented!(),
+            Occurrence::Tuple(os) => {
+                let idents = (0..os.len()).map(|i| format_ident!("v{}", i + 1));
+                let values = os.iter().enumerate().map(|(i, o)| {
+                    let ident = format_ident!("v{}", i + 1);
+                    o.transform_input(quote! { #ident }).unwrap_or(quote! { #ident })
+                });
+                Some(quote! {
+                    match #expr {
+                        (#(#idents),*) => (#(#values),*)
+                    }
+                })
+            },
         }
     }
 
