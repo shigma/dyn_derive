@@ -237,8 +237,7 @@ fn get_full_name(item: &syn::ItemTrait) -> (TokenStream, TokenStream) {
     )
 }
 
-pub fn transform(_attrs: TokenStream, input: TokenStream) -> TokenStream {
-    let mut fact: syn::ItemTrait = syn::parse2(input).expect("expect trait");
+pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
     let mut inst = fact.clone();
     let inst_ident = inst.ident.clone();
     let fact_ident = format_ident!("{}Factory", inst_ident);
