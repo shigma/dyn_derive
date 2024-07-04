@@ -1,6 +1,6 @@
 #[dyn_trait]
 trait Meta<T> {
-    fn recv_1(self);
-    fn recv_2(&self);
-    fn recv_3(self: Box<Self>);
+    fn method_1(self);
+    fn method_2(&self);
+    fn method_3(self: Box<Self>);
 }
