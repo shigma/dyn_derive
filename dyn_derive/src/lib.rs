@@ -55,11 +55,13 @@ pub fn dyn_trait(attr: TokenStream, input: TokenStream) -> TokenStream {
 
 #[cfg(test)]
 mod test {
+    use std::env::args_os;
+    use std::ffi::OsString;
     use std::fs::{create_dir_all, read_to_string, write};
     use std::mem::replace;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
-    use pretty_assertions::assert_eq;
+    use pretty_assertions::StrComparison;
     use prettyplease::unparse;
     use proc_macro2::TokenStream;
     use quote::{quote, ToTokens};
@@ -80,28 +82,53 @@ mod test {
         transform(attr, item)
     }
 
+    struct TestDiff {
+        path: PathBuf,
+        expect: String,
+        actual: String,
+    }
+
     #[test]
     fn fixtures() {
-        let temp_dir = "fixtures/temp";
+        let args = args_os().collect::<Vec<_>>();
         let input_dir = "fixtures/input";
         let output_dir = "fixtures/output";
+        let mut diffs = vec![];
+        let will_emit = args.contains(&OsString::from("emit"));
         for entry in WalkDir::new(input_dir).into_iter().filter_map(Result::ok) {
             let input_path = entry.path();
             if !input_path.is_file() || input_path.extension() != Some("rs".as_ref()) {
                 continue;
             }
             let path = input_path.strip_prefix(input_dir).unwrap();
+            let output_path = Path::new(output_dir).join(path);
             let input = read_to_string(input_path).unwrap().parse().unwrap();
             let actual = unparse(&syn::parse2(transform_input(input)).unwrap());
-            if true {
-                let temp_path = Path::new(temp_dir).join(path);
-                create_dir_all(temp_path.parent().unwrap()).unwrap();
-                write(temp_path, actual).unwrap();
-            } else {
-                let output_path = Path::new(output_dir).join(path);
-                let expect = read_to_string(&output_path).unwrap();
-                assert_eq!(expect, actual);
+            let expect_result = read_to_string(&output_path);
+            if let Ok(expect) = &expect_result {
+                if expect == &actual {
+                    continue;
+                }
             }
+            if will_emit {
+                create_dir_all(output_path.parent().unwrap()).unwrap();
+                write(output_path, &actual).unwrap();
+            }
+            if let Ok(expect) = expect_result {
+                diffs.push(TestDiff {
+                    path: path.to_path_buf(),
+                    expect,
+                    actual,
+                });
+            }
+        }
+        let len = diffs.len();
+        for diff in diffs {
+            eprintln!("diff {}", diff.path.display());
+            eprintln!("{}", StrComparison::new(&diff.expect, &diff.actual));
+        }
+        if len > 0 && !will_emit {
+            panic!("Some tests failed");
         }
     }
 }
