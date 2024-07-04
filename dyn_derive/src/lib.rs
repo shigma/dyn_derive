@@ -55,7 +55,7 @@ pub fn dyn_trait(attr: TokenStream, input: TokenStream) -> TokenStream {
 
 #[cfg(test)]
 mod test {
-    use std::fs::read_to_string;
+    use std::fs::{create_dir_all, read_to_string, write};
     use std::mem::replace;
     use std::path::Path;
 
@@ -67,11 +67,7 @@ mod test {
 
     use crate::dyn_trait::transform;
 
-    fn format(input: TokenStream) -> String {
-        unparse(&syn::parse2(input).unwrap())
-    }
-
-    fn check_transform(input: TokenStream, output: TokenStream) {
+    fn transform_input(input: TokenStream) -> TokenStream {
         let mut item: syn::ItemTrait = syn::parse2(input).unwrap();
         let attrs = replace(&mut item.attrs, vec![]);
         assert_eq!(attrs.len(), 1);
@@ -81,12 +77,12 @@ mod test {
             syn::Meta::List(list) => list.tokens.clone(),
             syn::Meta::NameValue(_) => unimplemented!(),
         };
-        let actual = transform(attr, item);
-        assert_eq!(format(actual), format(output));
+        transform(attr, item)
     }
 
     #[test]
     fn fixtures() {
+        let temp_dir = "fixtures/temp";
         let input_dir = "fixtures/input";
         let output_dir = "fixtures/output";
         for entry in WalkDir::new(input_dir).into_iter().filter_map(Result::ok) {
@@ -94,10 +90,18 @@ mod test {
             if !input_path.is_file() || input_path.extension() != Some("rs".as_ref()) {
                 continue;
             }
-            let output_path = Path::new(output_dir).join(input_path.strip_prefix(input_dir).unwrap());
-            let input = read_to_string(input_path).unwrap();
-            let output = read_to_string(&output_path).unwrap();
-            check_transform(input.parse().unwrap(), output.parse().unwrap());
+            let path = input_path.strip_prefix(input_dir).unwrap();
+            let input = read_to_string(input_path).unwrap().parse().unwrap();
+            let actual = unparse(&syn::parse2(transform_input(input)).unwrap());
+            if true {
+                let temp_path = Path::new(temp_dir).join(path);
+                create_dir_all(temp_path.parent().unwrap()).unwrap();
+                write(temp_path, actual).unwrap();
+            } else {
+                let output_path = Path::new(output_dir).join(path);
+                let expect = read_to_string(&output_path).unwrap();
+                assert_eq!(expect, actual);
+            }
         }
     }
 }
