@@ -6,9 +6,9 @@ use quote::{format_ident, quote, ToTokens};
 
 fn supertraits(fact: &mut syn::ItemTrait, inst: &mut syn::ItemTrait) -> TokenStream {
     let mut has_sized = false;
-    let mut output = quote! {};
     let inst_ident = &inst.ident;
     let (impl_generics, type_generics, where_clause) = inst.generics.split_for_impl();
+    let mut output = quote! {};
     inst.supertraits = syn::punctuated::Punctuated::from_iter(fact.supertraits.iter_mut().flat_map(|param| {
         let syn::TypeParamBound::Trait(fact_bound) = param else {
             return Some(param.clone())
@@ -23,6 +23,7 @@ fn supertraits(fact: &mut syn::ItemTrait, inst: &mut syn::ItemTrait) -> TokenStr
             "Clone" => {
                 inst_bound.path = syn::parse_quote! { ::dyn_std::clone::Clone };
                 output.extend(quote! {
+                    #[automatically_derived]
                     impl #impl_generics Clone for Box<dyn #inst_ident #type_generics> #where_clause {
                         #[inline]
                         fn clone(&self) -> Self {
@@ -40,6 +41,7 @@ fn supertraits(fact: &mut syn::ItemTrait, inst: &mut syn::ItemTrait) -> TokenStr
                 };
                 inst_bound.path = syn::parse_quote! { ::dyn_std::cmp::#name };
                 output.extend(quote! {
+                    #[automatically_derived]
                     impl #impl_generics std::cmp::#name for dyn #inst_ident #type_generics #where_clause {
                         #[inline]
                         fn #method(&self, other: &Self) -> #return_type {
@@ -51,6 +53,7 @@ fn supertraits(fact: &mut syn::ItemTrait, inst: &mut syn::ItemTrait) -> TokenStr
                 // Workaround Rust compiler bug:
                 // https://github.com/rust-lang/rust/issues/31740#issuecomment-700950186
                 output.extend(quote! {
+                    #[automatically_derived]
                     impl #impl_generics std::cmp::#name<&Self> for Box<dyn #inst_ident #type_generics> #where_clause {
                         #[inline]
                         fn #method(&self, other: &&Self) -> #return_type {
@@ -66,6 +69,7 @@ fn supertraits(fact: &mut syn::ItemTrait, inst: &mut syn::ItemTrait) -> TokenStr
                 inst_bound.path = syn::parse_quote! { ::dyn_std::ops::#name };
                 fact_bound.path = syn::parse_quote! { #name<Output = Self> };
                 output.extend(quote! {
+                    #[automatically_derived]
                     impl #impl_generics std::ops::#name for Box<dyn #inst_ident #type_generics> #where_clause {
                         type Output = Self;
                         #[inline]
@@ -83,6 +87,7 @@ fn supertraits(fact: &mut syn::ItemTrait, inst: &mut syn::ItemTrait) -> TokenStr
                 inst_bound.path = syn::parse_quote! { ::dyn_std::ops::#name };
                 fact_bound.path = syn::parse_quote! { #name<Output = Self> };
                 output.extend(quote! {
+                    #[automatically_derived]
                     impl #impl_generics std::ops::#name for Box<dyn #inst_ident #type_generics> #where_clause {
                         type Output = Self;
                         #[inline]
@@ -99,6 +104,7 @@ fn supertraits(fact: &mut syn::ItemTrait, inst: &mut syn::ItemTrait) -> TokenStr
                 let dyn_method = format_ident!("dyn_{}_assign", method);
                 inst_bound.path = syn::parse_quote! { ::dyn_std::ops::#name };
                 output.extend(quote! {
+                    #[automatically_derived]
                     impl #impl_generics std::ops::#name for Box<dyn #inst_ident #type_generics> #where_clause {
                         #[inline]
                         fn #method(&mut self, other: Self) {
@@ -119,6 +125,8 @@ fn supertraits(fact: &mut syn::ItemTrait, inst: &mut syn::ItemTrait) -> TokenStr
     output
 }
 
+// fixme: self argument
+// fixme: separate static and dynamic args
 struct Generic {
     param: syn::TypeParam,
     args: Vec<syn::Type>,
@@ -177,23 +185,26 @@ fn collect_generics(inst: &mut syn::ItemTrait) -> HashMap<String, Generic> {
     data
 }
 
-fn make_dyn(ident: &impl ToTokens, _is_ref: bool) -> syn::Type {
-    // if is_ref {
-    //     syn::parse_quote! { dyn #ident }
-    // } else {
-    //     syn::parse_quote! { Box<dyn #ident> }
-    // }
-    syn::parse_quote! { Box<dyn #ident> }
+fn make_dyn(ident: &impl ToTokens, is_ref: bool) -> syn::Type {
+    if is_ref {
+        syn::parse_quote! { dyn #ident }
+    } else {
+        syn::parse_quote! { Box<dyn #ident> }
+    }
 }
 
-fn match_generics(name: String, inst_trait: &TokenStream, generics: &HashMap<String, Generic>, is_ref: bool) -> Option<(syn::Type, TokenStream)> {
-    if name == "Self" {
+fn match_generics(path: &syn::TypePath, inst_trait: &TokenStream, generics: &HashMap<String, Generic>, is_ref: bool) -> Option<(syn::Type, TokenStream)> {
+    if path.qself.is_some() || path.path.segments.len() != 1 {
+        return None
+    }
+    let last = path.path.segments.last().unwrap();
+    if last.ident == "Self" {
         return Some((
             make_dyn(inst_trait, is_ref),
             quote! { Self },
         ))
     }
-    let Some(g) = generics.get(&name) else {
+    let Some(g) = generics.get(&last.ident.to_string()) else {
         return None
     };
     let ident = &g.param.ident;
@@ -281,8 +292,8 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
                 let stmts = inst_fn.sig.inputs.iter_mut().enumerate().filter_map(|(i, arg)| {
                     match arg {
                         syn::FnArg::Typed(arg) => {
-                            let occurrence = Occurrence::substitute(&mut arg.ty, false, &|name, is_ref| {
-                                match_generics(name, &inst_trait, &inst_generics, is_ref)
+                            let occurrence = Occurrence::substitute(&mut arg.ty, false, &|path, is_ref| {
+                                match_generics(path, &inst_trait, &inst_generics, is_ref)
                             });
                             let ident = format_ident!("v{}", i);
                             if let Some(body) = occurrence.transform_input(quote! { #ident }) {
@@ -302,8 +313,8 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
                 }).collect::<Vec<_>>();
                 let output = match &mut inst_fn.sig.output {
                     syn::ReturnType::Type(_, ty) => {
-                        Occurrence::substitute(ty.as_mut(), false, &|name, is_ref| {
-                            match_generics(name, &inst_trait, &inst_generics, is_ref)
+                        Occurrence::substitute(ty.as_mut(), false, &|path, is_ref| {
+                            match_generics(path, &inst_trait, &inst_generics, is_ref)
                         })
                     },
                     _ => Occurrence::None,
@@ -340,6 +351,7 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
         #inst
         #super_impls
         #fact
+        #[automatically_derived]
         impl #impl_generics #inst_trait for ::dyn_std::Instance<Factory, #fact_phantom> #where_clause {
             #(#fact_items)*
         }
@@ -356,11 +368,10 @@ enum Occurrence {
 }
 
 impl Occurrence {
-    fn substitute(ty: &mut syn::Type, is_ref: bool, f: &impl Fn(String, bool) -> Option<(syn::Type, TokenStream)>) -> Self {
+    fn substitute(ty: &mut syn::Type, is_ref: bool, f: &impl Fn(&syn::TypePath, bool) -> Option<(syn::Type, TokenStream)>) -> Self {
         match ty {
             syn::Type::Path(tp) => {
-                let name = tp.path.to_token_stream().to_string();
-                let result = f(name, is_ref);
+                let result = f(tp, is_ref);
                 if let Some((repl, repl2)) = result {
                     *ty = repl;
                     return Self::Exact(repl2)
@@ -415,6 +426,22 @@ impl Occurrence {
                     return Self::Ref(Box::new(o), tr.mutability.is_some())
                 }
             },
+            syn::Type::Slice(ts) => {
+                let o = Self::substitute(&mut ts.elem, true, f);
+                if matches!(o, Self::None) {
+                    return Self::None
+                } else {
+                    unimplemented!("slice types in trait methods")
+                }
+            },
+            syn::Type::Ptr(ptr) => {
+                let o = Self::substitute(&mut ptr.elem, true, f);
+                if matches!(o, Self::None) {
+                    return Self::None
+                } else {
+                    unimplemented!("pointers in trait methods")
+                }
+            },
             _ => Self::None,
         }
     }
@@ -424,11 +451,10 @@ impl Occurrence {
             Occurrence::None => None,
             Occurrence::Exact(ty) => Some(quote! { #ty::downcast(#expr) }),
             Occurrence::Ref(o, mutability) => match o.as_ref() {
-                Occurrence::Exact(ty) => match mutability {
-                    true => Some(quote! { #ty::downcast_mut(&mut **#expr) }),
-                    false => Some(quote! { #ty::downcast_ref(&**#expr) }),
-                },
-                Occurrence::None => None,
+                Occurrence::Exact(ty) => Some(match mutability {
+                    true => quote! { #ty::downcast_mut(#expr) },
+                    false => quote! { #ty::downcast_ref(#expr) },
+                }),
                 _ => unimplemented!(),
             },
             Occurrence::Args(os, ts) => {
@@ -480,7 +506,7 @@ impl Occurrence {
                     }
                 }
             },
-            Occurrence::Ref(_, _) => unreachable!(),
+            Occurrence::Ref(_, _) => unimplemented!(),
         }
     }
 }
