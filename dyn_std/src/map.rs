@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::Hash;
 
 /// Help traits for unsized coercion.
@@ -18,14 +18,6 @@ map_trait!(Map3; S1, S2, S3; T1, T2, T3; f1, f2, f3);
 map_trait!(Map4; S1, S2, S3, S4; T1, T2, T3, T4; f1, f2, f3, f4);
 map_trait!(Map5; S1, S2, S3, S4, S5; T1, T2, T3, T4, T5; f1, f2, f3, f4, f5);
 map_trait!(Map6; S1, S2, S3, S4, S5, S6; T1, T2, T3, T4, T5, T6; f1, f2, f3, f4, f5, f6);
-
-impl<T1> Map1<T1> for Box<T1> {
-    type Input<S1> = Box<S1>;
-    #[inline]
-    fn map<S1>(value: Self::Input<S1>, f1: fn(S1) -> T1) -> Self {
-        Box::new(f1(*value))
-    }
-}
 
 impl<T1> Map1<T1> for Option<T1> {
     type Input<S1> = Option<S1>;
@@ -61,6 +53,14 @@ impl<T1, T2> Map2<T1, T2> for Result<T1, T2> {
 
 impl<T1: Eq + Hash, T2> Map2<T1, T2> for HashMap<T1, T2> {
     type Input<S1, S2> = HashMap<S1, S2>;
+    #[inline]
+    fn map<S1, S2>(value: Self::Input<S1, S2>, f1: fn(S1) -> T1, f2: fn(S2) -> T2) -> Self {
+        value.into_iter().map(|(k, v)| (f1(k), f2(v))).collect()
+    }
+}
+
+impl<T1: Ord, T2> Map2<T1, T2> for BTreeMap<T1, T2> {
+    type Input<S1, S2> = BTreeMap<S1, S2>;
     #[inline]
     fn map<S1, S2>(value: Self::Input<S1, S2>, f1: fn(S1) -> T1, f2: fn(S2) -> T2) -> Self {
         value.into_iter().map(|(k, v)| (f1(k), f2(v))).collect()

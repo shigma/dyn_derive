@@ -132,57 +132,65 @@ struct Generic {
     args: Vec<syn::Type>,
 }
 
-fn collect_generics(inst: &mut syn::ItemTrait) -> HashMap<String, Generic> {
-    let mut data = HashMap::new();
-    let params = replace(&mut inst.generics.params, Default::default());
-    for param in params {
-        let syn::GenericParam::Type(mut param) = param else {
-            inst.generics.params.push(param);
-            continue;
-        };
-        let index = param.attrs.iter().position(|attr| {
-            attr.meta.path().is_ident("dynamic")
-        });
-        if let Some(index) = index {
-            param.attrs.remove(index);
-        } else {
-            inst.generics.params.push(syn::GenericParam::Type(param));
-            continue;
-        }
-        // todo: multiple bounds
-        for bound in &mut param.bounds {
-            match bound {
-                syn::TypeParamBound::Trait(bound) => {
-                    let last = bound.path.segments.last_mut().unwrap();
-                    let args = std::mem::replace(&mut last.arguments, Default::default());
-                    match args {
-                        syn::PathArguments::None => {
-                            data.insert(param.ident.to_string(), Generic {
-                                param,
-                                args: vec![],
-                            });
-                            break;
-                        },
-                        syn::PathArguments::AngleBracketed(args) => {
-                            data.insert(param.ident.to_string(), Generic {
-                                param,
-                                args: args.args.into_iter().map(|arg| {
-                                    match arg {
-                                        syn::GenericArgument::Type(ty) => ty,
-                                        _ => unimplemented!(),
-                                    }
-                                }).collect(),
-                            });
-                            break;
-                        },
-                        syn::PathArguments::Parenthesized(_) => unimplemented!("parenthesized bounds in trait generics"),
-                    }
-                },
-                _ => {},
+struct GenericsData {
+    name: TokenStream,
+    data: HashMap<String, Generic>,
+}
+
+impl GenericsData {
+    fn from(inst: &mut syn::ItemTrait) -> Self {
+        let mut data = HashMap::new();
+        let params = replace(&mut inst.generics.params, Default::default());
+        for param in params {
+            let syn::GenericParam::Type(mut param) = param else {
+                inst.generics.params.push(param);
+                continue;
+            };
+            let index = param.attrs.iter().position(|attr| {
+                attr.meta.path().is_ident("dynamic")
+            });
+            if let Some(index) = index {
+                param.attrs.remove(index);
+            } else {
+                inst.generics.params.push(syn::GenericParam::Type(param));
+                continue;
+            }
+            // todo: multiple bounds
+            for bound in &mut param.bounds {
+                match bound {
+                    syn::TypeParamBound::Trait(bound) => {
+                        let last = bound.path.segments.last_mut().unwrap();
+                        let args = std::mem::replace(&mut last.arguments, Default::default());
+                        match args {
+                            syn::PathArguments::None => {
+                                data.insert(param.ident.to_string(), Generic {
+                                    param,
+                                    args: vec![],
+                                });
+                                break;
+                            },
+                            syn::PathArguments::AngleBracketed(args) => {
+                                data.insert(param.ident.to_string(), Generic {
+                                    param,
+                                    args: args.args.into_iter().map(|arg| {
+                                        match arg {
+                                            syn::GenericArgument::Type(ty) => ty,
+                                            _ => unimplemented!(),
+                                        }
+                                    }).collect(),
+                                });
+                                break;
+                            },
+                            syn::PathArguments::Parenthesized(_) => unimplemented!("parenthesized bounds in trait generics"),
+                        }
+                    },
+                    _ => {},
+                }
             }
         }
+        let (name, _) = get_full_name(inst);
+        Self { name, data }
     }
-    data
 }
 
 fn make_dyn(ident: &impl ToTokens, is_ref: bool) -> syn::Type {
@@ -191,29 +199,6 @@ fn make_dyn(ident: &impl ToTokens, is_ref: bool) -> syn::Type {
     } else {
         syn::parse_quote! { Box<dyn #ident> }
     }
-}
-
-fn match_generics(path: &syn::TypePath, inst_trait: &TokenStream, generics: &HashMap<String, Generic>, is_ref: bool) -> Option<(syn::Type, TokenStream)> {
-    if path.qself.is_some() || path.path.segments.len() != 1 {
-        return None
-    }
-    let last = path.path.segments.last().unwrap();
-    if last.ident == "Self" {
-        return Some((
-            make_dyn(inst_trait, is_ref),
-            quote! { Self },
-        ))
-    }
-    let Some(g) = generics.get(&last.ident.to_string()) else {
-        return None
-    };
-    let ident = &g.param.ident;
-    let bounds = &g.param.bounds;
-    let args = &g.args;
-    return Some((
-        make_dyn(bounds, is_ref),
-        quote! { ::dyn_std::Instance::<#ident, (#(#args,)*)> },
-    ))
 }
 
 fn get_full_name(item: &syn::ItemTrait) -> (TokenStream, TokenStream) {
@@ -252,7 +237,7 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
     let mut inst = fact.clone();
     let inst_ident = inst.ident.clone();
     let fact_ident = format_ident!("{}Factory", inst_ident);
-    let inst_generics = collect_generics(&mut inst);
+    let generics = GenericsData::from(&mut inst);
     let (inst_trait, _) = get_full_name(&inst);
     let super_impls = supertraits(&mut fact, &mut inst);
     fact.generics.params.iter_mut().for_each(|param| {
@@ -292,10 +277,13 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
                 let stmts = inst_fn.sig.inputs.iter_mut().enumerate().filter_map(|(i, arg)| {
                     match arg {
                         syn::FnArg::Typed(arg) => {
-                            let occurrence = Occurrence::substitute(&mut arg.ty, false, &inst_trait, &inst_generics);
+                            let occurrence = Occurrence::substitute(&mut arg.ty, false, &generics);
                             let ident = format_ident!("v{}", i);
-                            if let Some(body) = occurrence.transform_input(&quote! { #ident }) {
-                                arg.pat = Box::new(syn::parse_quote! { #ident });
+                            if let Some((body, mutability)) = occurrence.transform_input(&quote! { #ident }) {
+                                arg.pat = match mutability {
+                                    true => Box::new(syn::parse_quote! { mut #ident }),
+                                    false => Box::new(syn::parse_quote! { #ident }),
+                                };
                                 Some(quote! { let #ident = #body; })
                             } else {
                                 None
@@ -311,7 +299,7 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
                 }).collect::<Vec<_>>();
                 let output = match &mut inst_fn.sig.output {
                     syn::ReturnType::Type(_, ty) => {
-                        Occurrence::substitute(ty.as_mut(), false, &inst_trait, &inst_generics)
+                        Occurrence::substitute(ty.as_mut(), false, &generics)
                     },
                     _ => Occurrence::None,
                 };
@@ -328,7 +316,7 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
                     }
                 });
                 let invocation = quote! { #ident(#(#args),*) };
-                let body = output.transform_output_unwrap(match recv_arg {
+                let (body, _) = output.transform_output_unwrap(match recv_arg {
                     Some(_) => quote! { self.0.#invocation },
                     None => quote! { Factory::#invocation },
                 });
@@ -354,13 +342,50 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
     }
 }
 
+fn match_generics(path: &syn::TypePath, generics: &GenericsData, is_ref: bool) -> Option<(syn::Type, TokenStream)> {
+    if path.qself.is_some() || path.path.segments.len() != 1 {
+        return None
+    }
+    let last = path.path.segments.last().unwrap();
+    if last.ident == "Self" {
+        return Some((
+            make_dyn(&generics.name, is_ref),
+            quote! { Self },
+        ))
+    }
+    let Some(g) = generics.data.get(&last.ident.to_string()) else {
+        return None
+    };
+    let ident = &g.param.ident;
+    let bounds = &g.param.bounds;
+    let args = &g.args;
+    return Some((
+        make_dyn(bounds, is_ref),
+        quote! { ::dyn_std::Instance::<#ident, (#(#args,)*)> },
+    ))
+}
+
+#[derive(Debug, Clone)]
+enum RefType {
+    Ref,
+    Mut,
+    Box,
+}
+
+#[derive(Debug, Clone)]
+enum FnType {
+    Fn,
+    FnMut,
+    FnOnce,
+}
+
 #[derive(Debug, Clone)]
 enum Occurrence {
     Exact(TokenStream),
     Args(Vec<Occurrence>, Vec<syn::Type>),
     Tuple(Vec<Occurrence>),
-    Ref(Box<Occurrence>, bool),
-    Fn(usize, Vec<TokenStream>, Box<Occurrence>),
+    RefLike(Box<Occurrence>, RefType),
+    Fn(FnType, TokenStream, Vec<TokenStream>, Box<Occurrence>),
     None,
 }
 
@@ -368,12 +393,31 @@ impl Occurrence {
     fn substitute(
         ty: &mut syn::Type,
         is_ref: bool,
-        inst_trait: &TokenStream,
-        inst_generics: &HashMap<String, Generic>,
+        generics: &GenericsData,
     ) -> Self {
         match ty {
             syn::Type::Path(tp) => {
-                let result = match_generics(tp, inst_trait, inst_generics, is_ref);
+                if tp.qself.is_none() && tp.path.segments.len() == 1 {
+                    let last = tp.path.segments.last_mut().unwrap();
+                    if last.ident == "Box" {
+                        let syn::PathArguments::AngleBracketed(args) = &mut last.arguments else {
+                            panic!("expected angle-bracketed arguments in Box type")
+                        };
+                        if args.args.len() != 1 {
+                            panic!("expected exactly one argument in Box type")
+                        }
+                        let syn::GenericArgument::Type(ty) = args.args.first_mut().unwrap() else {
+                            panic!("expected type argument in Box type")
+                        };
+                        let o = Self::substitute(ty, true, generics);
+                        if matches!(o, Self::None) {
+                            return Self::None
+                        } else {
+                            return Self::RefLike(Box::new(o), RefType::Box)
+                        }
+                    }
+                }
+                let result = match_generics(tp, generics, is_ref);
                 if let Some((repl, repl2)) = result {
                     *ty = repl;
                     return Self::Exact(repl2)
@@ -392,7 +436,7 @@ impl Occurrence {
                     })
                     .collect::<Vec<_>>();
                 let os = ts.iter_mut().map(|ty| {
-                    let o = Self::substitute(ty, false, inst_trait, inst_generics);
+                    let o = Self::substitute(ty, false, generics);
                     if !matches!(o, Self::None) {
                         nothing = false;
                     }
@@ -408,7 +452,7 @@ impl Occurrence {
                 let mut nothing = true;
                 let mut ts = tt.elems.iter_mut().collect::<Vec<_>>();
                 let os = ts.iter_mut().map(|ty| {
-                    let o = Self::substitute(ty, false, inst_trait, inst_generics);
+                    let o = Self::substitute(ty, false, generics);
                     if !matches!(o, Self::None) {
                         nothing = false;
                     }
@@ -421,15 +465,18 @@ impl Occurrence {
                 }
             },
             syn::Type::Reference(tr) => {
-                let o = Self::substitute(&mut tr.elem, true, inst_trait, inst_generics);
+                let o = Self::substitute(&mut tr.elem, true, generics);
                 if matches!(o, Self::None) {
                     return Self::None
                 } else {
-                    return Self::Ref(Box::new(o), tr.mutability.is_some())
+                    return Self::RefLike(Box::new(o), match tr.mutability {
+                        Some(_) => RefType::Mut,
+                        None => RefType::Ref,
+                    })
                 }
             },
             syn::Type::Slice(ts) => {
-                let o = Self::substitute(&mut ts.elem, true, inst_trait, inst_generics);
+                let o = Self::substitute(&mut ts.elem, true, generics);
                 if matches!(o, Self::None) {
                     return Self::None
                 } else {
@@ -437,7 +484,7 @@ impl Occurrence {
                 }
             },
             syn::Type::Ptr(ptr) => {
-                let o = Self::substitute(&mut ptr.elem, true, inst_trait, inst_generics);
+                let o = Self::substitute(&mut ptr.elem, true, generics);
                 if matches!(o, Self::None) {
                     return Self::None
                 } else {
@@ -454,24 +501,30 @@ impl Occurrence {
                         continue;
                     }
                     let last = bound.path.segments.last_mut().unwrap();
-                    if last.ident != "Fn" && last.ident != "FnOnce" && last.ident != "FnMut" {
-                        continue;
-                    }
+                    let fn_type = match last.ident.to_string().as_str() {
+                        "Fn" => FnType::Fn,
+                        "FnMut" => FnType::FnMut,
+                        "FnOnce" => FnType::FnOnce,
+                        _ => continue,
+                    };
                     let syn::PathArguments::Parenthesized(args) = &mut last.arguments else {
                         continue;
                     };
                     let stmts = args.inputs.iter_mut().enumerate().filter_map(|(i, ty)| {
-                        let occurrence = Occurrence::substitute(ty, false, inst_trait, inst_generics);
+                        let occurrence = Occurrence::substitute(ty, false, generics);
                         let ident = format_ident!("vv{}", i + 1);
-                        if let Some(body) = occurrence.transform_output(&quote! { #ident }) {
-                            Some(quote! { let #ident = #body; })
+                        if let Some((body, mutability)) = occurrence.transform_output(&quote! { #ident }) {
+                            Some(match mutability {
+                                true => quote! { let mut #ident = #body; },
+                                false => quote! { let #ident = #body; },
+                            })
                         } else {
                             None
                         }
                     }).collect::<Vec<_>>();
                     let output = match &mut args.output {
                         syn::ReturnType::Type(_, ty) => {
-                            Occurrence::substitute(ty.as_mut(), false, inst_trait, inst_generics)
+                            Occurrence::substitute(ty.as_mut(), false, generics)
                         },
                         _ => Occurrence::None,
                     };
@@ -479,7 +532,8 @@ impl Occurrence {
                         continue;
                     }
                     // fixme: more than one trait
-                    return Occurrence::Fn(args.inputs.len(), stmts, Box::new(output))
+                    let args = (0..args.inputs.len()).map(|i| format_ident!("vv{}", i + 1));
+                    return Occurrence::Fn(fn_type, quote! { #(#args),* }, stmts, Box::new(output))
                 }
                 Occurrence::None
             },
@@ -487,86 +541,101 @@ impl Occurrence {
         }
     }
 
-    fn transform_input_unwrap(&self, expr: TokenStream) -> TokenStream {
-        self.transform_input(&expr).unwrap_or(expr)
+    fn transform_input_unwrap(&self, expr: TokenStream) -> (TokenStream, bool) {
+        self.transform_input(&expr).unwrap_or((expr, false))
     }
 
-    fn transform_input(&self, expr: &TokenStream) -> Option<TokenStream> {
+    fn transform_input(&self, expr: &TokenStream) -> Option<(TokenStream, bool)> {
         match self {
             Occurrence::None => None,
-            Occurrence::Exact(ty) => Some(quote! { #ty::downcast(#expr) }),
-            Occurrence::Ref(o, mutability) => match o.as_ref() {
-                Occurrence::Exact(ty) => Some(match mutability {
-                    true => quote! { #ty::downcast_mut(#expr) },
-                    false => quote! { #ty::downcast_ref(#expr) },
-                }),
-                Occurrence::Fn(len, stmts, output) => {
-                    let args = (0..*len).map(|i| format_ident!("vv{}", i + 1));
-                    let body = output.transform_input_unwrap(quote! { #expr(#(#args),*) });
-                    let args = (0..*len).map(|i| format_ident!("vv{}", i + 1));
-                    Some(match mutability {
-                        true => quote! { &mut |#(#args),*| { #(#stmts)* #body } },
-                        false => quote! { & |#(#args),*| { #(#stmts)* #body } },
+            Occurrence::Exact(ty) => Some((quote! { #ty::downcast(#expr) }, false)),
+            Occurrence::RefLike(o, ref_type) => match o.as_ref() {
+                Occurrence::Exact(ty) => Some((match ref_type {
+                    RefType::Box => quote! { Box::new(#ty::downcast(#expr)) },
+                    RefType::Mut => quote! { #ty::downcast_mut(#expr) },
+                    RefType::Ref => quote! { #ty::downcast_ref(#expr) },
+                }, false)),
+                Occurrence::Fn(..) => {
+                    let (expr, mutability) = o.transform_input(expr).unwrap();
+                    Some(match ref_type {
+                        RefType::Box => (quote! { Box::new(move #expr) }, mutability),
+                        RefType::Mut => (quote! { &mut #expr }, mutability),
+                        RefType::Ref => (quote! { & #expr }, mutability),
                     })
                 },
-                _ => unimplemented!(),
+                _ => unimplemented!("reference in trait method return type (other than &T or &dyn Fn)"),
             },
             Occurrence::Args(os, ts) => {
                 let len = os.len();
                 let ident = format_ident!("Map{}", len);
                 let args = os.iter().map(|o| {
-                    let body = o.transform_input_unwrap(quote! { x });
-                    quote! { |x| #body }
+                    let (expr, mutability) = o.transform_input_unwrap(quote! { x });
+                    match mutability {
+                        true => quote! { |mut x| #expr },
+                        false => quote! { |x| #expr },
+                    }
                 });
-                Some(quote! { ::dyn_std::map::#ident::map::<#(#ts),*>(#expr, #(#args),*) })
+                Some((quote! { ::dyn_std::map::#ident::map::<#(#ts),*>(#expr, #(#args),*) }, false))
             },
             Occurrence::Tuple(os) => {
-                let idents = (0..os.len()).map(|i| format_ident!("v{}", i + 1));
-                let values = os.iter().enumerate().map(|(i, o)| {
+                let (idents, values) = os.iter().enumerate().map(|(i, o)| {
                     let ident = format_ident!("v{}", i + 1);
-                    o.transform_input_unwrap(quote! { #ident })
-                });
-                Some(quote! {
+                    let (expr, mutability) = o.transform_input_unwrap(quote! { #ident });
+                    (match mutability {
+                        true => quote! { mut #ident },
+                        false => quote! { #ident },
+                    }, expr)
+                }).unzip::<TokenStream, TokenStream, Vec<TokenStream>, Vec<TokenStream>>();
+                Some((quote! {
                     match #expr {
                         (#(#idents),*) => (#(#values),*)
                     }
-                })
+                }, false))
             },
-            Occurrence::Fn(_, _, _) => unimplemented!("impl trait in trait method param type"),
+            Occurrence::Fn(fn_type, args, stmts, output) => {
+                let (body, _mutability) = output.transform_input_unwrap(quote! { #expr(#args) });
+                Some((quote! { |#args| { #(#stmts)* #body } }, matches!(fn_type, FnType::FnMut)))
+            },
         }
     }
 
-    fn transform_output_unwrap(&self, expr: TokenStream) -> TokenStream {
-        self.transform_output(&expr).unwrap_or(expr)
+    fn transform_output_unwrap(&self, expr: TokenStream) -> (TokenStream, bool) {
+        self.transform_output(&expr).unwrap_or((expr, false))
     }
 
-    fn transform_output(&self, expr: &TokenStream) -> Option<TokenStream> {
+    fn transform_output(&self, expr: &TokenStream) -> Option<(TokenStream, bool)> {
         match self {
-            Occurrence::Exact(_) => Some(quote! { Box::new(::dyn_std::Instance::new(#expr)) }),
+            Occurrence::Exact(_) => Some((quote! { Box::new(::dyn_std::Instance::new(#expr)) }, false)),
             Occurrence::None => None,
             Occurrence::Args(os, ts) => {
                 let len = os.len();
                 let ident = format_ident!("Map{}", len);
                 let args = os.iter().map(|o| {
-                    let expr = o.transform_output_unwrap(quote! { x });
-                    quote! { |x| #expr }
+                    let (expr, mutability) = o.transform_output_unwrap(quote! { x });
+                    match mutability {
+                        true => quote! { |mut x| #expr },
+                        false => quote! { |x| #expr },
+                    }
                 });
-                Some(quote! { ::dyn_std::map::#ident::<#(#ts),*>::map(#expr, #(#args),*) })
+                Some((quote! { ::dyn_std::map::#ident::<#(#ts),*>::map(#expr, #(#args),*) }, false))
             },
             Occurrence::Tuple(os) => {
-                let idents = (0..os.len()).map(|i| format_ident!("v{}", i + 1));
-                let values = os.iter().enumerate().map(|(i, o)| {
+                let (idents, values) = os.iter().enumerate().map(|(i, o)| {
                     let ident = format_ident!("v{}", i + 1);
-                    o.transform_output_unwrap(quote! { #ident })
-                });
-                Some(quote! {
+                    let (expr, mutability) = o.transform_output_unwrap(quote! { #ident });
+                    (match mutability {
+                        true => quote! { mut #ident },
+                        false => quote! { #ident },
+                    }, expr)
+                }).unzip::<TokenStream, TokenStream, Vec<TokenStream>, Vec<TokenStream>>();
+                Some((quote! {
                     match #expr {
                         (#(#idents),*) => (#(#values),*)
                     }
-                })
+                }, false))
             },
-            Occurrence::Ref(_, _) => unimplemented!("reference in trait method return type"),
-            Occurrence::Fn(_, _, _) => unimplemented!("impl trait in trait method return type"),
+            Occurrence::RefLike(..) => unimplemented!("reference in trait method return type"),
+            Occurrence::Fn(..) => unimplemented!("dyn Fn() in trait method return type"),
         }
     }
 }
