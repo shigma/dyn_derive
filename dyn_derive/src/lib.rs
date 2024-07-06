@@ -5,6 +5,7 @@ use proc_macro::TokenStream;
 #[cfg(not(feature = "extra-cmp-impl"))]
 mod derive;
 mod dyn_trait;
+mod subst_self;
 
 /// This derive macro has the exact same behavior as `PartialEq`,
 /// but it workarounds a strange behavior of the Rust compiler.
