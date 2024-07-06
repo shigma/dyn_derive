@@ -1,4 +1,5 @@
 trait Meta: ::dyn_std::clone::Clone + ::dyn_std::any::Dyn {}
+#[automatically_derived]
 impl Clone for Box<dyn Meta> {
     #[inline]
     fn clone(&self) -> Self {
@@ -6,4 +7,5 @@ impl Clone for Box<dyn Meta> {
     }
 }
 trait MetaFactory: Clone + Sized + 'static {}
+#[automatically_derived]
 impl<Factory: MetaFactory> Meta for ::dyn_std::Instance<Factory, ()> {}

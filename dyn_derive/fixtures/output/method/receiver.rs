@@ -8,6 +8,7 @@ trait MetaFactory<T: 'static>: Sized + 'static {
     fn method_2(&self);
     fn method_3(self: Box<Self>);
 }
+#[automatically_derived]
 impl<T: 'static, Factory: MetaFactory<T>> Meta<T>
 for ::dyn_std::Instance<Factory, (T,)> {
     #[inline]
