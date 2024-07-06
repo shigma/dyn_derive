@@ -7,6 +7,7 @@ pub trait Meta<T>: Clone {
     fn method_3(arg1: Vec<Self>, arg2: Vec<&Self>) -> Self;
     fn method_4(arg1: Option<Self>, arg2: Option<&Self>) -> Self;
     fn method_5(arg1: Result<Self, ()>, arg2: Result<(), &Self>) -> Self;
+    fn method_6(&self, arg1: &mut dyn FnMut(Self) -> Self) -> Self;
 }
 
 #[derive(Clone)]
@@ -27,6 +28,10 @@ impl<T: Clone + 'static> MetaFactory<T> for MetaImpl<T> {
 
     fn method_5(arg1: Result<Self, ()>, _arg2: Result<(), &Self>) -> Self {
         arg1.unwrap()
+    }
+
+    fn method_6(&self, arg1: &mut dyn FnMut(Self) -> Self) -> Self {
+        arg1(self.clone())
     }
 }
 

@@ -292,11 +292,9 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
                 let stmts = inst_fn.sig.inputs.iter_mut().enumerate().filter_map(|(i, arg)| {
                     match arg {
                         syn::FnArg::Typed(arg) => {
-                            let occurrence = Occurrence::substitute(&mut arg.ty, false, &|path, is_ref| {
-                                match_generics(path, &inst_trait, &inst_generics, is_ref)
-                            });
+                            let occurrence = Occurrence::substitute(&mut arg.ty, false, &inst_trait, &inst_generics);
                             let ident = format_ident!("v{}", i);
-                            if let Some(body) = occurrence.transform_input(quote! { #ident }) {
+                            if let Some(body) = occurrence.transform_input(&quote! { #ident }) {
                                 arg.pat = Box::new(syn::parse_quote! { #ident });
                                 Some(quote! { let #ident = #body; })
                             } else {
@@ -313,9 +311,7 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
                 }).collect::<Vec<_>>();
                 let output = match &mut inst_fn.sig.output {
                     syn::ReturnType::Type(_, ty) => {
-                        Occurrence::substitute(ty.as_mut(), false, &|path, is_ref| {
-                            match_generics(path, &inst_trait, &inst_generics, is_ref)
-                        })
+                        Occurrence::substitute(ty.as_mut(), false, &inst_trait, &inst_generics)
                     },
                     _ => Occurrence::None,
                 };
@@ -332,9 +328,9 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
                     }
                 });
                 let invocation = quote! { #ident(#(#args),*) };
-                let body = output.transform_output(match recv_arg {
+                let body = output.transform_output_unwrap(match recv_arg {
                     Some(_) => quote! { self.0.#invocation },
-                    None => quote! { <Factory as #fact_trait>::#invocation },
+                    None => quote! { Factory::#invocation },
                 });
                 impl_fn.default = Some(syn::parse_quote! {{ #(#stmts)* #body }});
                 fact_items.push(impl_fn);
@@ -364,14 +360,20 @@ enum Occurrence {
     Args(Vec<Occurrence>, Vec<syn::Type>),
     Tuple(Vec<Occurrence>),
     Ref(Box<Occurrence>, bool),
+    Fn(usize, Vec<TokenStream>, Box<Occurrence>),
     None,
 }
 
 impl Occurrence {
-    fn substitute(ty: &mut syn::Type, is_ref: bool, f: &impl Fn(&syn::TypePath, bool) -> Option<(syn::Type, TokenStream)>) -> Self {
+    fn substitute(
+        ty: &mut syn::Type,
+        is_ref: bool,
+        inst_trait: &TokenStream,
+        inst_generics: &HashMap<String, Generic>,
+    ) -> Self {
         match ty {
             syn::Type::Path(tp) => {
-                let result = f(tp, is_ref);
+                let result = match_generics(tp, inst_trait, inst_generics, is_ref);
                 if let Some((repl, repl2)) = result {
                     *ty = repl;
                     return Self::Exact(repl2)
@@ -390,7 +392,7 @@ impl Occurrence {
                     })
                     .collect::<Vec<_>>();
                 let os = ts.iter_mut().map(|ty| {
-                    let o = Self::substitute(ty, false, f);
+                    let o = Self::substitute(ty, false, inst_trait, inst_generics);
                     if !matches!(o, Self::None) {
                         nothing = false;
                     }
@@ -406,7 +408,7 @@ impl Occurrence {
                 let mut nothing = true;
                 let mut ts = tt.elems.iter_mut().collect::<Vec<_>>();
                 let os = ts.iter_mut().map(|ty| {
-                    let o = Self::substitute(ty, false, f);
+                    let o = Self::substitute(ty, false, inst_trait, inst_generics);
                     if !matches!(o, Self::None) {
                         nothing = false;
                     }
@@ -419,7 +421,7 @@ impl Occurrence {
                 }
             },
             syn::Type::Reference(tr) => {
-                let o = Self::substitute(&mut tr.elem, true, f);
+                let o = Self::substitute(&mut tr.elem, true, inst_trait, inst_generics);
                 if matches!(o, Self::None) {
                     return Self::None
                 } else {
@@ -427,7 +429,7 @@ impl Occurrence {
                 }
             },
             syn::Type::Slice(ts) => {
-                let o = Self::substitute(&mut ts.elem, true, f);
+                let o = Self::substitute(&mut ts.elem, true, inst_trait, inst_generics);
                 if matches!(o, Self::None) {
                     return Self::None
                 } else {
@@ -435,18 +437,61 @@ impl Occurrence {
                 }
             },
             syn::Type::Ptr(ptr) => {
-                let o = Self::substitute(&mut ptr.elem, true, f);
+                let o = Self::substitute(&mut ptr.elem, true, inst_trait, inst_generics);
                 if matches!(o, Self::None) {
                     return Self::None
                 } else {
                     unimplemented!("pointers in trait methods")
                 }
             },
+            syn::Type::ImplTrait(_) => unimplemented!("impl trait in trait methods"),
+            syn::Type::TraitObject(trait_object) => {
+                for bound in &mut trait_object.bounds {
+                    let syn::TypeParamBound::Trait(bound) = bound else {
+                        continue;
+                    };
+                    if bound.path.segments.len() != 1 {
+                        continue;
+                    }
+                    let last = bound.path.segments.last_mut().unwrap();
+                    if last.ident != "Fn" && last.ident != "FnOnce" && last.ident != "FnMut" {
+                        continue;
+                    }
+                    let syn::PathArguments::Parenthesized(args) = &mut last.arguments else {
+                        continue;
+                    };
+                    let stmts = args.inputs.iter_mut().enumerate().filter_map(|(i, ty)| {
+                        let occurrence = Occurrence::substitute(ty, false, inst_trait, inst_generics);
+                        let ident = format_ident!("vv{}", i + 1);
+                        if let Some(body) = occurrence.transform_output(&quote! { #ident }) {
+                            Some(quote! { let #ident = #body; })
+                        } else {
+                            None
+                        }
+                    }).collect::<Vec<_>>();
+                    let output = match &mut args.output {
+                        syn::ReturnType::Type(_, ty) => {
+                            Occurrence::substitute(ty.as_mut(), false, inst_trait, inst_generics)
+                        },
+                        _ => Occurrence::None,
+                    };
+                    if stmts.len() == 0 && matches!(output, Occurrence::None) {
+                        continue;
+                    }
+                    // fixme: more than one trait
+                    return Occurrence::Fn(args.inputs.len(), stmts, Box::new(output))
+                }
+                Occurrence::None
+            },
             _ => Self::None,
         }
     }
 
-    fn transform_input(&self, expr: TokenStream) -> Option<TokenStream> {
+    fn transform_input_unwrap(&self, expr: TokenStream) -> TokenStream {
+        self.transform_input(&expr).unwrap_or(expr)
+    }
+
+    fn transform_input(&self, expr: &TokenStream) -> Option<TokenStream> {
         match self {
             Occurrence::None => None,
             Occurrence::Exact(ty) => Some(quote! { #ty::downcast(#expr) }),
@@ -455,13 +500,22 @@ impl Occurrence {
                     true => quote! { #ty::downcast_mut(#expr) },
                     false => quote! { #ty::downcast_ref(#expr) },
                 }),
+                Occurrence::Fn(len, stmts, output) => {
+                    let args = (0..*len).map(|i| format_ident!("vv{}", i + 1));
+                    let body = output.transform_input_unwrap(quote! { #expr(#(#args),*) });
+                    let args = (0..*len).map(|i| format_ident!("vv{}", i + 1));
+                    Some(match mutability {
+                        true => quote! { &mut |#(#args),*| { #(#stmts)* #body } },
+                        false => quote! { & |#(#args),*| { #(#stmts)* #body } },
+                    })
+                },
                 _ => unimplemented!(),
             },
             Occurrence::Args(os, ts) => {
                 let len = os.len();
                 let ident = format_ident!("Map{}", len);
                 let args = os.iter().map(|o| {
-                    let body = o.transform_input(quote! { x }).unwrap_or(quote! { x });
+                    let body = o.transform_input_unwrap(quote! { x });
                     quote! { |x| #body }
                 });
                 Some(quote! { ::dyn_std::map::#ident::map::<#(#ts),*>(#expr, #(#args),*) })
@@ -470,7 +524,7 @@ impl Occurrence {
                 let idents = (0..os.len()).map(|i| format_ident!("v{}", i + 1));
                 let values = os.iter().enumerate().map(|(i, o)| {
                     let ident = format_ident!("v{}", i + 1);
-                    o.transform_input(quote! { #ident }).unwrap_or(quote! { #ident })
+                    o.transform_input_unwrap(quote! { #ident })
                 });
                 Some(quote! {
                     match #expr {
@@ -478,35 +532,41 @@ impl Occurrence {
                     }
                 })
             },
+            Occurrence::Fn(_, _, _) => unimplemented!("impl trait in trait method param type"),
         }
     }
 
-    fn transform_output(&self, expr: TokenStream) -> TokenStream {
+    fn transform_output_unwrap(&self, expr: TokenStream) -> TokenStream {
+        self.transform_output(&expr).unwrap_or(expr)
+    }
+
+    fn transform_output(&self, expr: &TokenStream) -> Option<TokenStream> {
         match self {
-            Occurrence::Exact(_) => quote! { Box::new(::dyn_std::Instance::new(#expr)) },
-            Occurrence::None => quote! { #expr },
+            Occurrence::Exact(_) => Some(quote! { Box::new(::dyn_std::Instance::new(#expr)) }),
+            Occurrence::None => None,
             Occurrence::Args(os, ts) => {
                 let len = os.len();
                 let ident = format_ident!("Map{}", len);
                 let args = os.iter().map(|o| {
-                    let expr = o.transform_output(quote! { x });
+                    let expr = o.transform_output_unwrap(quote! { x });
                     quote! { |x| #expr }
                 });
-                quote! { ::dyn_std::map::#ident::<#(#ts),*>::map(#expr, #(#args),*) }
+                Some(quote! { ::dyn_std::map::#ident::<#(#ts),*>::map(#expr, #(#args),*) })
             },
             Occurrence::Tuple(os) => {
                 let idents = (0..os.len()).map(|i| format_ident!("v{}", i + 1));
                 let values = os.iter().enumerate().map(|(i, o)| {
                     let ident = format_ident!("v{}", i + 1);
-                    o.transform_output(quote! { #ident })
+                    o.transform_output_unwrap(quote! { #ident })
                 });
-                quote! {
+                Some(quote! {
                     match #expr {
                         (#(#idents),*) => (#(#values),*)
                     }
-                }
+                })
             },
-            Occurrence::Ref(_, _) => unimplemented!(),
+            Occurrence::Ref(_, _) => unimplemented!("reference in trait method return type"),
+            Occurrence::Fn(_, _, _) => unimplemented!("impl trait in trait method return type"),
         }
     }
 }
