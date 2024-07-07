@@ -276,29 +276,34 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
                 if recv_arg.is_none() {
                     inst_fn.sig.inputs.insert(0, syn::parse_quote! { &self });
                 }
-                let (args, pat) = inst_fn.sig.inputs.iter_mut().enumerate().filter_map(|(i, arg)| {
-                    match arg {
-                        syn::FnArg::Typed(arg) => {
-                            let occurrence = Occurrence::substitute(&mut arg.ty, false, &generics);
-                            let ident = format_ident!("v{}", i + 1);
-                            let (body, mutability) = occurrence.transform_input_unwrap(quote! { #ident });
-                            let pat: syn::Pat = match mutability {
-                                true => syn::parse_quote! { mut #ident },
-                                false => syn::parse_quote! { #ident },
-                            };
-                            Some((body, pat))
-                        },
-                        syn::FnArg::Receiver(recv) => {
-                            if recv.ty.to_token_stream().to_string() == "Self" {
-                                recv.ty = syn::parse_quote! { Box<Self> };
-                            }
-                            None
-                        },
-                    }
-                }).unzip::<TokenStream, syn::Pat, Vec<_>, Vec<_>>();
+                let (args, pat) = inst_fn.sig.inputs
+                    .iter_mut()
+                    .filter_map(|arg| {
+                        match arg {
+                            syn::FnArg::Typed(arg) => Some(arg),
+                            syn::FnArg::Receiver(recv) => {
+                                if recv.ty.to_token_stream().to_string() == "Self" {
+                                    recv.ty = syn::parse_quote! { Box<Self> };
+                                }
+                                None
+                            },
+                        }
+                    })
+                    .enumerate()
+                    .map(|(i, arg)| {
+                        let occurrence = Occurrence::substitute(&mut arg.ty, &generics, false, true, 0);
+                        let ident = format_ident!("v{}", i + 1);
+                        let (body, mutability) = occurrence.transform_input_unwrap(quote! { #ident });
+                        let pat: syn::Pat = match mutability {
+                            true => syn::parse_quote! { mut #ident },
+                            false => syn::parse_quote! { #ident },
+                        };
+                        (body, pat)
+                    })
+                    .unzip::<TokenStream, syn::Pat, Vec<_>, Vec<_>>();
                 let output = match &mut inst_fn.sig.output {
                     syn::ReturnType::Type(_, ty) => {
-                        Occurrence::substitute(ty.as_mut(), false, &generics)
+                        Occurrence::substitute(ty.as_mut(), &generics, false, false, 0)
                     },
                     _ => Occurrence::None,
                 };
@@ -393,8 +398,10 @@ enum Occurrence {
 impl Occurrence {
     fn substitute(
         ty: &mut syn::Type,
-        is_ref: bool,
         generics: &GenericsData,
+        is_ref: bool,
+        polarity: bool,
+        depth: usize,
     ) -> Self {
         match ty {
             syn::Type::Path(tp) => {
@@ -410,7 +417,7 @@ impl Occurrence {
                         let syn::GenericArgument::Type(ty) = args.args.first_mut().unwrap() else {
                             panic!("expected type argument in Box type")
                         };
-                        let o = Self::substitute(ty, true, generics);
+                        let o = Self::substitute(ty, generics, true, polarity, depth);
                         if matches!(o, Self::None) {
                             return Self::None
                         } else {
@@ -434,7 +441,7 @@ impl Occurrence {
                         };
                         let mut old_ty = ty.clone();
                         subst_self(&mut old_ty, &syn::parse_quote! { Factory });
-                        let o = Self::substitute(ty, false, generics);
+                        let o = Self::substitute(ty, generics, false, polarity, depth);
                         Some((o, old_ty, ty.clone()))
                     })
                     .collect::<Vec<_>>();
@@ -448,7 +455,7 @@ impl Occurrence {
                 let mut nothing = true;
                 let mut ts = tt.elems.iter_mut().collect::<Vec<_>>();
                 let os = ts.iter_mut().map(|ty| {
-                    let o = Self::substitute(ty, false, generics);
+                    let o = Self::substitute(ty, generics, false, polarity, depth);
                     if !matches!(o, Self::None) {
                         nothing = false;
                     }
@@ -461,7 +468,7 @@ impl Occurrence {
                 }
             },
             syn::Type::Reference(tr) => {
-                let o = Self::substitute(&mut tr.elem, true, generics);
+                let o = Self::substitute(&mut tr.elem, generics, true, polarity, depth);
                 if matches!(o, Self::None) {
                     return Self::None
                 } else {
@@ -472,7 +479,7 @@ impl Occurrence {
                 }
             },
             syn::Type::Slice(ts) => {
-                let o = Self::substitute(&mut ts.elem, true, generics);
+                let o = Self::substitute(&mut ts.elem, generics, false, polarity, depth);
                 if matches!(o, Self::None) {
                     return Self::None
                 } else {
@@ -480,7 +487,7 @@ impl Occurrence {
                 }
             },
             syn::Type::Ptr(ptr) => {
-                let o = Self::substitute(&mut ptr.elem, true, generics);
+                let o = Self::substitute(&mut ptr.elem, generics, false, polarity, depth);
                 if matches!(o, Self::None) {
                     return Self::None
                 } else {
@@ -506,26 +513,31 @@ impl Occurrence {
                     let syn::PathArguments::Parenthesized(args) = &mut last.arguments else {
                         continue;
                     };
-                    let exprs = args.inputs.iter_mut().enumerate().filter_map(|(i, ty)| {
-                        let occurrence = Occurrence::substitute(ty, false, generics);
-                        let ident = format_ident!("vv{}", i + 1);
-                        if let Some((body, _mutability)) = occurrence.transform_output(&quote! { #ident }) {
-                            Some(body)
-                        } else {
-                            None
-                        }
-                    }).collect::<Vec<_>>();
+                    let inputs = args.inputs
+                        .iter_mut()
+                        .map(|ty| Self::substitute(ty, generics, false, !polarity, depth + 1))
+                        .collect::<Vec<_>>();
                     let output = match &mut args.output {
                         syn::ReturnType::Type(_, ty) => {
-                            Occurrence::substitute(ty.as_mut(), false, generics)
+                            Occurrence::substitute(ty.as_mut(), generics, false, polarity, depth + 1)
                         },
                         _ => Occurrence::None,
                     };
-                    if exprs.len() == 0 && matches!(output, Occurrence::None) {
+                    if inputs.iter().all(|input| matches!(input, Occurrence::None)) && matches!(output, Occurrence::None) {
                         continue;
                     }
+                    let (exprs, args) = inputs.into_iter().enumerate().map(|(i, occurrence)| {
+                        let ident = format_ident!("v{}_{}", depth + 1, i + 1);
+                        let (expr, mutability) = match polarity {
+                            true => occurrence.transform_output_unwrap(quote! { #ident }),
+                            false => occurrence.transform_input_unwrap(quote! { #ident }),
+                        };
+                        (expr, match mutability {
+                            true => quote! { mut #ident },
+                            false => quote! { #ident },
+                        })
+                    }).unzip::<TokenStream, TokenStream, Vec<_>, Vec<_>>();
                     // fixme: more than one trait
-                    let args = (0..args.inputs.len()).map(|i| format_ident!("vv{}", i + 1));
                     return Occurrence::Fn(fn_type, quote! { #(#args),* }, quote! { #(#exprs),* }, Box::new(output))
                 }
                 Occurrence::None
@@ -556,7 +568,11 @@ impl Occurrence {
                         RefType::Ref => (quote! { & #expr }, false),
                     })
                 },
-                _ => unimplemented!("reference in trait method return type (other than &T or &dyn Fn)"),
+                // Currently supported reference types:
+                // - &T (where T does not contain Self)
+                // - &dyn Fn() (where parameter and return types are all non-referencing valid parameter types)
+                // TODO: support box types
+                _ => unimplemented!("reference in trait method param type"),
             },
             Occurrence::Args(args) => {
                 let len = args.len();
@@ -627,8 +643,17 @@ impl Occurrence {
                     }
                 }, false))
             },
-            Occurrence::RefLike(..) => unimplemented!("reference in trait method return type"),
-            Occurrence::Fn(..) => unimplemented!("dyn Fn() in trait method return type"),
+            Occurrence::RefLike(o, ref_type) => {
+                let RefType::Box = ref_type else {
+                    unimplemented!("reference in trait method return type")
+                };
+                let (expr, mutability) = o.transform_output(expr).unwrap();
+                Some((quote! { Box::new(move #expr) }, mutability))
+            },
+            Occurrence::Fn(fn_type, args, exprs, output) => {
+                let (body, _mutability) = output.transform_output_unwrap(quote! { #expr(#exprs) });
+                Some((quote! { |#args| #body }, matches!(fn_type, FnType::FnMut)))
+            },
         }
     }
 }

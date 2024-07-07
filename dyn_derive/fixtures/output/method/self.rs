@@ -1,6 +1,6 @@
 trait Meta<T>: ::dyn_std::any::Dyn {
-    fn method_1(&self, v2: Box<dyn Meta<T>>, v3: &dyn Meta<T>);
-    fn method_2(&self, v2: (T, Box<dyn Meta<T>>, &dyn Meta<T>));
+    fn method_1(&self, arg1: Box<dyn Meta<T>>, arg2: &dyn Meta<T>);
+    fn method_2(&self, arg: (T, Box<dyn Meta<T>>, &dyn Meta<T>));
 }
 trait MetaFactory<T: 'static>: Sized + 'static {
     fn method_1(arg1: Self, arg2: &Self);
@@ -10,13 +10,13 @@ trait MetaFactory<T: 'static>: Sized + 'static {
 impl<T: 'static, Factory: MetaFactory<T>> Meta<T>
 for ::dyn_std::Instance<Factory, (T,)> {
     #[inline]
-    fn method_1(&self, v2: Box<dyn Meta<T>>, v3: &dyn Meta<T>) {
-        Factory::method_1(Self::downcast(v2), Self::downcast_ref(v3))
+    fn method_1(&self, v1: Box<dyn Meta<T>>, v2: &dyn Meta<T>) {
+        Factory::method_1(Self::downcast(v1), Self::downcast_ref(v2))
     }
     #[inline]
-    fn method_2(&self, v2: (T, Box<dyn Meta<T>>, &dyn Meta<T>)) {
+    fn method_2(&self, v1: (T, Box<dyn Meta<T>>, &dyn Meta<T>)) {
         Factory::method_2(
-            match v2 {
+            match v1 {
                 (v1, v2, v3) => (v1, Self::downcast(v2), Self::downcast_ref(v3)),
             },
         )

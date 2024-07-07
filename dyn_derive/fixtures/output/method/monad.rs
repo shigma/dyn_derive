@@ -1,9 +1,9 @@
 trait Meta<T>: ::dyn_std::any::Dyn {
-    fn option(&self, v2: Option<Box<dyn Meta<T>>>);
-    fn result_1(&self, v2: Result<Box<dyn Meta<T>>, ()>);
-    fn result_2(&self, v2: Result<(), Box<dyn Meta<T>>>);
-    fn vec(&self, v2: Vec<Box<dyn Meta<T>>>);
-    fn nested(&self, v2: Vec<(Box<dyn Meta<T>>, Option<Option<Box<dyn Meta<T>>>>)>);
+    fn option(&self, arg: Option<Box<dyn Meta<T>>>);
+    fn result_1(&self, arg: Result<Box<dyn Meta<T>>, ()>);
+    fn result_2(&self, arg: Result<(), Box<dyn Meta<T>>>);
+    fn vec(&self, arg: Vec<Box<dyn Meta<T>>>);
+    fn nested(&self, arg: Vec<(Box<dyn Meta<T>>, Option<Option<Box<dyn Meta<T>>>>)>);
 }
 trait MetaFactory<T: 'static>: Sized + 'static {
     fn option(arg: Option<Self>);
@@ -16,48 +16,48 @@ trait MetaFactory<T: 'static>: Sized + 'static {
 impl<T: 'static, Factory: MetaFactory<T>> Meta<T>
 for ::dyn_std::Instance<Factory, (T,)> {
     #[inline]
-    fn option(&self, v2: Option<Box<dyn Meta<T>>>) {
+    fn option(&self, v1: Option<Box<dyn Meta<T>>>) {
         Factory::option(
             ::dyn_std::map::Map1::map(
-                v2,
+                v1,
                 |x: Box<dyn Meta<T>>| -> Factory { Self::downcast(x) },
             ),
         )
     }
     #[inline]
-    fn result_1(&self, v2: Result<Box<dyn Meta<T>>, ()>) {
+    fn result_1(&self, v1: Result<Box<dyn Meta<T>>, ()>) {
         Factory::result_1(
             ::dyn_std::map::Map2::map(
-                v2,
+                v1,
                 |x: Box<dyn Meta<T>>| -> Factory { Self::downcast(x) },
                 |x: ()| -> () { x },
             ),
         )
     }
     #[inline]
-    fn result_2(&self, v2: Result<(), Box<dyn Meta<T>>>) {
+    fn result_2(&self, v1: Result<(), Box<dyn Meta<T>>>) {
         Factory::result_2(
             ::dyn_std::map::Map2::map(
-                v2,
+                v1,
                 |x: ()| -> () { x },
                 |x: Box<dyn Meta<T>>| -> Factory { Self::downcast(x) },
             ),
         )
     }
     #[inline]
-    fn vec(&self, v2: Vec<Box<dyn Meta<T>>>) {
+    fn vec(&self, v1: Vec<Box<dyn Meta<T>>>) {
         Factory::vec(
             ::dyn_std::map::Map1::map(
-                v2,
+                v1,
                 |x: Box<dyn Meta<T>>| -> Factory { Self::downcast(x) },
             ),
         )
     }
     #[inline]
-    fn nested(&self, v2: Vec<(Box<dyn Meta<T>>, Option<Option<Box<dyn Meta<T>>>>)>) {
+    fn nested(&self, v1: Vec<(Box<dyn Meta<T>>, Option<Option<Box<dyn Meta<T>>>>)>) {
         Factory::nested(
             ::dyn_std::map::Map1::map(
-                v2,
+                v1,
                 |
                     x: (Box<dyn Meta<T>>, Option<Option<Box<dyn Meta<T>>>>),
                 | -> (Factory, Option<Option<Factory>>) {
