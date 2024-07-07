@@ -51,7 +51,6 @@ fn supertraits(fact: &mut syn::ItemTrait, inst: &mut syn::ItemTrait) -> TokenStr
                         }
                     }
                 });
-                #[cfg(feature = "extra-cmp-impl")]
                 // Workaround Rust compiler bug:
                 // https://github.com/rust-lang/rust/issues/31740#issuecomment-700950186
                 output.extend(quote! {

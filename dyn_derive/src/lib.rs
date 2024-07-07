@@ -2,34 +2,8 @@
 
 use proc_macro::TokenStream;
 
-#[cfg(not(feature = "extra-cmp-impl"))]
-mod derive;
 mod dyn_trait;
 mod subst_self;
-
-/// This derive macro has the exact same behavior as `PartialEq`,
-/// but it workarounds a strange behavior of the Rust compiler.
-/// 
-/// For other traits, you can just derive the original trait name.
-/// 
-/// ## Example
-/// 
-/// ```
-/// use dyn_derive::*;
-/// 
-/// #[dyn_trait]
-/// pub trait Meta: Clone + PartialEq {}
-/// 
-/// #[derive(Clone, PartialEqFix)]
-/// pub struct Foo {
-///     meta: Box<dyn Meta>,
-/// }
-/// ```
-#[cfg(not(feature = "extra-cmp-impl"))]
-#[proc_macro_derive(PartialEqFix)]
-pub fn derive_partial_eq(input: TokenStream) -> TokenStream {
-    derive::partial_eq::derive(input.into()).into()
-}
 
 /// This is a procedural macro for deriving object-unsafe traits.
 /// 

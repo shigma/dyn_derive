@@ -13,8 +13,7 @@ documentation = "https://docs.rs/dyn_derive"
 proc-macro = true
 
 [features]
-default = ["extra-cmp-impl"]
-extra-cmp-impl = []
+default = []
 
 [dependencies]
 dyn_std = { version = "0.3.0", path = "../dyn_std" }
