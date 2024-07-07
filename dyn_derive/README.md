@@ -190,7 +190,7 @@ struct Registry(HashMap<String, Box<dyn FooConstructor>>);
 
 impl Registry {
     fn register<T: Foo>(&mut self, name: impl Into<String>) {
-        self.0.insert(name.into(), Box::new(Constructor::<T>));
+        self.0.insert(name.into(), Box::new(Constructor::<T>::new()));
     }
 }
 ```

@@ -1,6 +1,6 @@
 [package]
 name = "dyn_derive"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 license = "MIT"
 keywords = ["dyn", "derive", "trait", "partial-eq", "clone"]
@@ -16,7 +16,7 @@ proc-macro = true
 default = []
 
 [dependencies]
-dyn_std = { version = "0.3.0", path = "../dyn_std" }
+dyn_std = { version = "0.3.1", path = "../dyn_std" }
 proc-macro2 = "1.0.60"
 quote = "1.0.28"
 syn = { version = "2.0.68", features = ["extra-traits", "full"] }
