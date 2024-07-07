@@ -276,24 +276,17 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
                 if recv_arg.is_none() {
                     inst_fn.sig.inputs.insert(0, syn::parse_quote! { &self });
                 }
-                let args = inst_fn.sig.inputs.iter_mut().enumerate().filter_map(|(i, arg)| {
+                let (args, pat) = inst_fn.sig.inputs.iter_mut().enumerate().filter_map(|(i, arg)| {
                     match arg {
                         syn::FnArg::Typed(arg) => {
                             let occurrence = Occurrence::substitute(&mut arg.ty, false, &generics);
                             let ident = format_ident!("v{}", i + 1);
-                            arg.pat = Box::new(syn::parse_quote! { #ident });
-                            if let Some((body, mutability)) = occurrence.transform_input(&quote! { #ident }) {
-                                let syn::Pat::Ident(pat_ident) = arg.pat.as_mut() else {
-                                    unreachable!()
-                                };
-                                pat_ident.mutability = match mutability {
-                                    true => Some(syn::parse_quote! { mut }),
-                                    false => None,
-                                };
-                                Some(body)
-                            } else {
-                                Some(quote! { #ident })
-                            }
+                            let (body, mutability) = occurrence.transform_input_unwrap(quote! { #ident });
+                            let pat: syn::Pat = match mutability {
+                                true => syn::parse_quote! { mut #ident },
+                                false => syn::parse_quote! { #ident },
+                            };
+                            Some((body, pat))
                         },
                         syn::FnArg::Receiver(recv) => {
                             if recv.ty.to_token_stream().to_string() == "Self" {
@@ -302,7 +295,7 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
                             None
                         },
                     }
-                }).collect::<Vec<_>>();
+                }).unzip::<TokenStream, syn::Pat, Vec<_>, Vec<_>>();
                 let output = match &mut inst_fn.sig.output {
                     syn::ReturnType::Type(_, ty) => {
                         Occurrence::substitute(ty.as_mut(), false, &generics)
@@ -312,6 +305,18 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
                 let mut impl_fn = inst_fn.clone();
                 impl_fn.attrs.push(syn::parse_quote! { #[inline] });
                 let ident = &impl_fn.sig.ident;
+                impl_fn.sig.inputs
+                    .iter_mut()
+                    .filter_map(|arg| {
+                        match arg {
+                            syn::FnArg::Typed(arg) => Some(arg),
+                            syn::FnArg::Receiver(_) => None,
+                        }
+                    })
+                    .zip(pat.into_iter())
+                    .for_each(|(arg, pat)| {
+                        arg.pat = Box::new(pat);
+                    });
                 let (body, _) = output.transform_output_unwrap(match recv_arg {
                     Some(_) => quote! { self.0.#ident(#(#args),*) },
                     None => quote! { Factory::#ident(#(#args),*) },
@@ -547,8 +552,8 @@ impl Occurrence {
                     let (expr, mutability) = o.transform_input(expr).unwrap();
                     Some(match ref_type {
                         RefType::Box => (quote! { Box::new(move #expr) }, mutability),
-                        RefType::Mut => (quote! { &mut #expr }, mutability),
-                        RefType::Ref => (quote! { & #expr }, mutability),
+                        RefType::Mut => (quote! { &mut #expr }, false),
+                        RefType::Ref => (quote! { & #expr }, false),
                     })
                 },
                 _ => unimplemented!("reference in trait method return type (other than &T or &dyn Fn)"),
@@ -573,7 +578,7 @@ impl Occurrence {
                         true => quote! { mut #ident },
                         false => quote! { #ident },
                     }, expr)
-                }).unzip::<TokenStream, TokenStream, Vec<TokenStream>, Vec<TokenStream>>();
+                }).unzip::<TokenStream, TokenStream, Vec<_>, Vec<_>>();
                 Some((quote! {
                     match #expr {
                         (#(#idents),*) => (#(#values),*)
@@ -615,7 +620,7 @@ impl Occurrence {
                         true => quote! { mut #ident },
                         false => quote! { #ident },
                     }, expr)
-                }).unzip::<TokenStream, TokenStream, Vec<TokenStream>, Vec<TokenStream>>();
+                }).unzip::<TokenStream, TokenStream, Vec<_>, Vec<_>>();
                 Some((quote! {
                     match #expr {
                         (#(#idents),*) => (#(#values),*)
