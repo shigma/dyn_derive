@@ -4,34 +4,49 @@ Inherit and derive object-unsafe traits for dynamic Rust.
 
 ## Introduction
 
-[Object safety](https://doc.rust-lang.org/reference/items/traits.html#object-safety) is a property of traits in Rust that determines whether the trait can be used as a trait object. However, there are many useful traits that are not object-safe, such as `Clone` and `PartialEq`.
+[Object safety](https://doc.rust-lang.org/reference/items/traits.html#object-safety) is a property of traits in Rust that determines whether the trait can be used as a trait object. However, the requirement for object safety is quite strict, limiting the expressiveness of the type system.
 
 For example, you cannot simply write:
 
 ```rust compile_fail
-pub trait Meta: Clone + PartialEq {}
+// Clone is not object-safe
+// PartialEq is not object-safe
+pub trait Foo: Clone + PartialEq {
+    // This method is not object-safe
+    fn adjust(self) -> Self;
+}
 
 #[derive(Clone, PartialEq)]
-pub struct Foo {
-    meta: Box<dyn Meta>,        // The trait `Meta` cannot be made into an object.
+pub struct Bar {
+    meta: Box<dyn Foo>,         // The trait `Foo` cannot be made into an object.
 }
 ```
 
-This crate provides a procedural macro for deriving object-unsafe traits:
+This crate provides a procedural macro for transforming object-unsafe traits into object-safe ones:
 
 ```rust
 use dyn_derive::*;
 
 #[dyn_trait]
-pub trait Meta: Clone + PartialEq {}
+pub trait Foo: Clone + PartialEq {
+    fn adjust(self) -> Self;
+}
 
 #[derive(Clone, PartialEq)]
-pub struct Foo {
-    meta: Box<dyn Meta>,        // Now it works!
+pub struct Bar {
+    meta: Box<dyn Foo>,         // Now it works!
 }
 ```
 
-## Basic Example
+Although there are still some limitations, this technique works smoothly in my scenarios.
+
+## Supertraits
+
+Supertraits is also required to be object-safe if the trait needs to be used as a trait object. However, many useful traits are not object-safe, such as `Clone` and `PartialEq`.
+
+To tackle this issue, this crate transforms the supertraits into object-safe ones, so that they can be used as supertraits and be derived for your custom types.
+
+### Basic Example
 
 Below is a basic example of how to use this crate:
 
@@ -40,7 +55,7 @@ use std::fmt::Debug;
 use dyn_derive::*;
 
 #[dyn_trait]
-pub trait Meta: Debug + Clone + PartialEq {
+pub trait Foo: Debug + Clone + PartialEq {
     fn answer(&self) -> i32 {
         42
     }
@@ -49,23 +64,23 @@ pub trait Meta: Debug + Clone + PartialEq {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MetaImpl;
 
-impl Meta for MetaImpl {}
+impl Foo for MetaImpl {}
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Foo {
-    meta: Box<dyn Meta>,
+pub struct Bar {
+    meta: Box<dyn Foo>,
 }
 
 fn main() {
-    let foo1 = Foo { meta: Box::new(MetaImpl) };
-    let foo2 = Foo { meta: Box::new(MetaImpl) };
+    let foo1 = Bar { meta: Box::new(MetaImpl) };
+    let foo2 = Bar { meta: Box::new(MetaImpl) };
     assert_eq!(foo1, foo2);
     let foo3 = foo1.clone();
     assert_eq!(foo3.meta.answer(), 42);
 }
 ```
 
-## Non-Derivable Traits
+### Non-Derivable Traits
 
 Taking the `Add` trait as an example:
 
@@ -75,12 +90,12 @@ use std::ops::Add;
 use dyn_derive::*;
 
 #[dyn_trait]
-pub trait Meta: Sized + Debug + Add {}
+pub trait Foo: Sized + Debug + Add {}
 
 #[derive(Debug)]
 pub struct MetaImpl(String);
 
-impl Meta for MetaImpl {}
+impl Foo for MetaImpl {}
 
 impl Add for MetaImpl {
     type Output = Self;
@@ -90,28 +105,42 @@ impl Add for MetaImpl {
     }
 }
 
-pub struct Foo {
-    pub meta: Box<dyn Meta>,
+pub struct Bar {
+    pub meta: Box<dyn Foo>,
 }
 
-impl Add for Foo {
+impl Add for Bar {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
         Self {
-            // `Box<dyn Meta>` can be added!
+            // `Box<dyn Foo>` can be added!
             meta: self.meta + rhs.meta,
         }
     }
 }
 
 fn main() {
-    let foo1 = Foo { meta: Box::new(MetaImpl("114".into())) };
-    let foo2 = Foo { meta: Box::new(MetaImpl("514".into())) };
+    let foo1 = Bar { meta: Box::new(MetaImpl("114".into())) };
+    let foo2 = Bar { meta: Box::new(MetaImpl("514".into())) };
     let foo3 = foo1 + foo2;
     println!("{:?}", foo3.meta);    // MetaImpl("114514")
 }
 ```
+
+### Supported Traits
+
+The following std traits are supported:
+
+- Clone
+- Neg, Not
+- Add, Sub, Mul, Div, Rem
+- BitAnd, BitOr, BitXor, Shl, Shr
+- AddAssign, SubAssign, MulAssign, DivAssign, RemAssign
+- BitAndAssign, BitOrAssign, BitXorAssign, ShlAssign, ShrAssign
+- PartialEq, Eq, PartialOrd, Ord
+
+More std traits and custom traits may be supported in the future.
 
 ## Features
 
