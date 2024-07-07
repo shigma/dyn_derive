@@ -90,7 +90,7 @@ use std::ops::Add;
 use dyn_derive::*;
 
 #[dyn_trait]
-pub trait Foo: Sized + Debug + Add {}
+pub trait Foo: Debug + Add {}
 
 #[derive(Debug)]
 pub struct MetaImpl(String);
@@ -132,26 +132,153 @@ fn main() {
 
 The following std traits are supported:
 
-- Clone
-- Neg, Not
-- Add, Sub, Mul, Div, Rem
-- BitAnd, BitOr, BitXor, Shl, Shr
-- AddAssign, SubAssign, MulAssign, DivAssign, RemAssign
-- BitAndAssign, BitOrAssign, BitXorAssign, ShlAssign, ShrAssign
-- PartialEq, Eq, PartialOrd, Ord
+- `Clone`
+- `Neg`, `Not`
+- `Add`, `Sub`, `Mul`, `Div`, `Rem`
+- `BitAnd`, `BitOr`, `BitXor`, `Shl`, `Shr`
+- `AddAssign`, `SubAssign`, `MulAssign`, `DivAssign`, `RemAssign`
+- `BitAndAssign`, `BitOrAssign`, `BitXorAssign`, `ShlAssign`, `ShrAssign`
+- `PartialEq`, `Eq`, `PartialOrd`, `Ord`
 
 More std traits and custom traits may be supported in the future.
 
-## Features
+## Methods
 
-### `extra-cmp-impl`
+Note: This part is not yet complete.
 
-There is a known issue with `PartialEq`: [rust-lang/rust#31740](https://github.com/rust-lang/rust/issues/31740). The crate provides two approaches to work around this issue:
+In Rust, associate functions can be divided into two types: methods and non-methods, depending on whether their first parameter is named `self`.
 
-- With feature `extra-cmp-impl`: the `dyn_trait` macro will implement extra `PartialEq<&Self>`.
-- Without feature `extra-cmp-impl`: you can use `PartialEqFix` derive macro instead of `PartialEq`.
+```rust
+trait Foo: Sized {
+  // These are methods.
+  fn method_1(&self);
+  fn method_2(self) -> Self;
+  // These are non-methods.
+  fn method_3() -> Option<Vec<Self>>;
+  fn method_4(this: &mut Self, that: Self);
+}
+```
 
-This feature is enabled by default.
+This crate supports both methods and non-methods, but they are treated differently. Methods and non-methods are separated into two traits, namely *instance* and *constructor*. They are both object-safe.
+
+```rust
+trait FooInstance {
+  fn method_1(&self);
+  fn method_2(self: Box<Self>) -> Box<dyn FooInstance>;
+}
+
+trait FooConstructor {
+  fn method_3(&self) -> Option<Vec<Box<dyn FooInstance>>>;
+  fn method_4(&self, this: &mut dyn FooInstance, that: Box<dyn FooInstance>);
+}
+```
+
+The original `Foo` trait (which may or may not be object-safe) can be wrapped by `Instance` and `Constructor` types in order to be used as an instance or constructor.
+
+```rust ignore
+impl FooInstance for ::dyn_std::Instance<Foo> {}
+impl FooConstructor for ::dyn_std::Constructor<Foo> {}
+```
+
+If you are developing a library, you may write code like this:
+
+```rust ignore
+use std::collections::HashMap;
+use dyn_std::Constructor;
+
+struct Registry(HashMap<String, Box<dyn FooConstructor>>);
+
+impl Registry {
+    fn register<T: Foo>(&mut self, name: impl Into<String>) {
+        self.0.insert(name.into(), Box::new(Constructor::<T>));
+    }
+}
+```
+
+And the user of your library may write code like this:
+
+```rust ignore
+let mut registry = Registry(HashMap::new());
+registry.register::<CustomFooImpl>("custom");
+```
+
+## Specification
+
+A trait should satisfy the all following requirements to be transformed into an object-safe trait by the `#[dyn_trait]` attribute.
+
+### Supertraits
+
+All supertraits must be:
+
+- either object-safe,
+- or one of the [above](#supported-traits) std traits.
+
+`Sized` will be automatically removed from the supertraits for instance and constructor traits, but retained for the original trait.
+
+### Associated Constants
+
+It must not have any associated constants.
+
+### Associated Types
+
+It must not have any associated types with generics.
+
+### Associated Functions
+
+#### Receiver Types
+
+Receiver types are types that can be used as the receiver of a method call. The following types can be used as receiver types:
+
+- `Self`
+- `&Self`
+- `&mut Self`
+- `Box<Self>`
+
+Note that `Rc<Self>`, `Arc<Self>`, and `Pin<P>` (where `P` is receiver) are not currently supported.
+
+#### Parameters Types
+
+All the parameters must be of the following types:
+
+- types that does not contain `Self`,
+- receiver types,
+- tuples of valid parameter types,
+- monads such as `Option<T>`, `Result<T, E>`, `Vec<T>` (where `T`, `E` are valid parameter types),
+- `&dyn`, `&mut dyn`, `Box<dyn>` of `Fn`, `FnMut`, `FnOnce` (where all the parameters are valid non-referencing parameter types).
+
+The following types are valid parameter types:
+
+```rust ignore
+(Self, &Self, Box<Self>)
+```
+```rust ignore
+HashMap<i32, HashMap<i32, &Self>>
+```
+```rust ignore
+Result<Vec<Box<dyn Fn(Self) -> Self>>, Option<Self>>
+```
+
+The following types are **NOT** valid parameter types:
+
+```rust ignore
+&[Self]
+```
+```rust ignore
+Pin<Arc<Self>>
+```
+```rust ignore
+&dyn Fn(&mut Self)
+```
+
+#### Return Types
+
+The return type must be a non-referencing parameter type.
+
+#### Generics
+
+Not have any type parameters (although lifetime parameters are allowed).
+
+`impl Trait` is considered as a type parameter, thus it is not allowed.
 
 ## Credits
 
