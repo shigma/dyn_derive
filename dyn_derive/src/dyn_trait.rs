@@ -193,36 +193,34 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
         match item {
             syn::TraitItem::Fn(inst_fn) => {
                 // inst_fn.default = None;
-                let recv_arg = inst_fn.sig.receiver().map(|_| quote! { self });
-                if recv_arg.is_none() {
+                let ident = &inst_fn.sig.ident;
+                let has_recv = inst_fn.sig.receiver().is_some();
+                if !has_recv {
                     inst_fn.sig.inputs.insert(0, syn::parse_quote! { &self });
                 }
-                let mut ctx_input = Context::new(&generics, true);
-                let (params, exprs) = ctx_input.subst_many(inst_fn.sig.inputs
-                    .iter_mut()
-                    .filter_map(|arg| {
-                        match arg {
-                            syn::FnArg::Typed(arg) => Some(arg.ty.as_mut()),
-                            syn::FnArg::Receiver(recv) => {
-                                if recv.ty.to_token_stream().to_string() == "Self" {
-                                    recv.ty = syn::parse_quote! { Box<Self> };
-                                }
-                                None
-                            },
-                        }
-                    }));
-                let ident = &inst_fn.sig.ident;
-                let expr = match recv_arg {
-                    Some(_) => quote! { self.0.#ident(#(#exprs),*) },
-                    None => quote! { Factory::#ident(#(#exprs),*) },
+                let ctx = Context::new(&generics);
+                let inputs = inst_fn.sig.inputs.iter_mut().filter_map(|arg| {
+                    match arg {
+                        syn::FnArg::Typed(arg) => Some(arg.ty.as_mut()),
+                        syn::FnArg::Receiver(recv) => {
+                            if recv.ty.to_token_stream().to_string() == "Self" {
+                                recv.ty = syn::parse_quote! { Box<Self> };
+                            }
+                            None
+                        },
+                    }
+                });
+                let (expr, params, _) = ctx.subst_fn(inputs, &mut inst_fn.sig.output, &match has_recv {
+                    true => quote! { self.0.#ident },
+                    false => quote! { Factory::#ident },
+                });
+                let mut impl_fn = syn::ImplItemFn {
+                    attrs: vec![syn::parse_quote! { #[inline] }],
+                    vis: syn::Visibility::Inherited,
+                    defaultness: None,
+                    sig: inst_fn.sig.clone(),
+                    block: syn::parse_quote! {{ #expr }},
                 };
-                let mut ctx_output = Context::new(&generics, false);
-                let (expr, _) = match &mut inst_fn.sig.output {
-                    syn::ReturnType::Type(_, ty) => ctx_output.subst(ty, &expr),
-                    syn::ReturnType::Default => (expr.to_token_stream(), false),
-                };
-                let mut impl_fn = inst_fn.clone();
-                impl_fn.attrs.push(syn::parse_quote! { #[inline] });
                 impl_fn.sig.inputs
                     .iter_mut()
                     .filter_map(|arg| {
@@ -233,9 +231,8 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
                     })
                     .zip(params.into_iter())
                     .for_each(|(arg, pat)| {
-                        arg.pat = Box::new(syn::parse_quote!{ #pat });
+                        arg.pat = Box::new(syn::parse_quote! { #pat });
                     });
-                impl_fn.default = Some(syn::parse_quote! {{ #expr }});
                 fact_items.push(impl_fn);
             },
             _ => {},

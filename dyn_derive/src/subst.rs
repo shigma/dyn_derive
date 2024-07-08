@@ -35,11 +35,11 @@ pub struct Context<'i> {
 }
 
 impl<'i> Context<'i> {
-    pub fn new(generics: &'i GenericsData, polarity: bool) -> Self {
+    pub fn new(generics: &'i GenericsData) -> Self {
         Self {
             generics,
             ref_type: RefType::None,
-            polarity,
+            polarity: false,
             depth: 0,
             is_dirty: false,
         }
@@ -69,14 +69,26 @@ impl<'i> Context<'i> {
         self.fork_ref(RefType::None)
     }
 
-    pub fn subst_many<'j>(&mut self, tys: impl Iterator<Item = &'j mut syn::Type>) -> (Vec<TokenStream>, Vec<TokenStream>) {
+    pub fn subst_fn<'j>(&self, inputs: impl Iterator<Item = &'j mut syn::Type>, output: &mut syn::ReturnType, expr: &impl ToTokens) -> (TokenStream, Vec<TokenStream>, bool) {
+        let mut ctx_input = self.fork_deep(true);
+        let (params, exprs) = ctx_input.subst_many(inputs);
+        let expr = quote! { #expr(#(#exprs),*) };
+        let mut ctx_output = self.fork_deep(false);
+        let (expr, _) = match output {
+            syn::ReturnType::Type(_, ty) => ctx_output.subst(ty, &expr),
+            syn::ReturnType::Default => (expr.to_token_stream(), false),
+        };
+        (expr, params, ctx_input.is_dirty || ctx_output.is_dirty)
+    }
+
+    fn subst_many<'j>(&mut self, tys: impl Iterator<Item = &'j mut syn::Type>) -> (Vec<TokenStream>, Vec<TokenStream>) {
         let (params, exprs) = tys
             .enumerate()
             .map(|(i, ty)| {
-                let ident = if self.depth == 0 {
+                let ident = if self.depth == 1 {
                     format_ident!("v{}", i + 1)
                 } else {
-                    format_ident!("v{}_{}", self.depth, i + 1)
+                    format_ident!("v{}_{}", self.depth - 1, i + 1)
                 };
                 let (expr, mutability) = self.subst(ty, &ident);
                 let prefix = make_mut_prefix(mutability);
@@ -211,7 +223,9 @@ impl<'i> Context<'i> {
                     unimplemented!("pointers in trait methods")
                 }
             },
-            syn::Type::ImplTrait(_) => unimplemented!("impl trait in trait methods"),
+            syn::Type::ImplTrait(_) => {
+                unimplemented!("impl trait in trait methods")
+            },
             syn::Type::TraitObject(trait_object) => 'k: {
                 for bound in &mut trait_object.bounds {
                     let syn::TypeParamBound::Trait(bound) = bound else {
@@ -228,17 +242,10 @@ impl<'i> Context<'i> {
                         _ => continue,
                     };
                     let syn::PathArguments::Parenthesized(args) = &mut last.arguments else {
-                        continue;
+                        panic!("expect parenthesized arguments in {} trait", last.ident)
                     };
-                    let mut ctx_input = self.fork_deep(true);
-                    let (params, exprs) = ctx_input.subst_many(args.inputs.iter_mut());
-                    let expr = quote! { #expr(#(#exprs),*) };
-                    let mut ctx_output = self.fork_deep(false);
-                    let (expr, _) = match &mut args.output {
-                        syn::ReturnType::Type(_, ty) => ctx_output.subst(ty, &expr),
-                        syn::ReturnType::Default => (expr.to_token_stream(), false),
-                    };
-                    if !ctx_input.is_dirty && !ctx_output.is_dirty {
+                    let (expr, params, is_dirty) = self.subst_fn(args.inputs.iter_mut(), &mut args.output, expr);
+                    if !is_dirty {
                         break 'k
                     }
                     self.is_dirty = true;
