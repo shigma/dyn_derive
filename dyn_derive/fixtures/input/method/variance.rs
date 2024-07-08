@@ -6,4 +6,5 @@ trait Meta<T> {
     fn method_4(arg: Box<dyn FnMut(Self) -> Self>);
     fn method_5(arg: Box<dyn FnMut(Box<dyn FnMut(Self) -> Self>) -> Self>);
     fn method_6(arg: Box<dyn FnOnce(Self) -> Box<dyn FnOnce(Self) -> Self>>);
+    fn method_7(arg: Box<dyn FnOnce(Self) -> Self>) -> Box<dyn FnOnce(Self) -> Self>;
 }

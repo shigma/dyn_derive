@@ -69,33 +69,42 @@ impl<'i> Context<'i> {
         self.fork_ref(RefType::None)
     }
 
-    pub fn subst_fn<'j>(&self, inputs: impl Iterator<Item = &'j mut syn::Type>, output: &mut syn::ReturnType, expr: &impl ToTokens) -> (TokenStream, Vec<TokenStream>, bool) {
+    pub fn subst_fn<'j>(&self, inputs: impl Iterator<Item = &'j mut syn::Type>, output: &mut syn::ReturnType, expr: &impl ToTokens) -> (TokenStream, Vec<TokenStream>, Vec<TokenStream>, bool) {
         let mut ctx_input = self.fork_deep(true);
-        let (params, exprs) = ctx_input.subst_many(inputs);
+        let [params, stmts, exprs] = ctx_input.subst_many(inputs);
         let expr = quote! { #expr(#(#exprs),*) };
         let mut ctx_output = self.fork_deep(false);
         let (expr, _) = match output {
             syn::ReturnType::Type(_, ty) => ctx_output.subst(ty, &expr),
             syn::ReturnType::Default => (expr.to_token_stream(), false),
         };
-        (expr, params, ctx_input.is_dirty || ctx_output.is_dirty)
+        (expr, stmts, params, ctx_input.is_dirty || ctx_output.is_dirty)
     }
 
-    fn subst_many<'j>(&mut self, tys: impl Iterator<Item = &'j mut syn::Type>) -> (Vec<TokenStream>, Vec<TokenStream>) {
-        let (params, exprs) = tys
-            .enumerate()
-            .map(|(i, ty)| {
-                let ident = if self.depth == 1 {
-                    format_ident!("v{}", i + 1)
-                } else {
-                    format_ident!("v{}_{}", self.depth - 1, i + 1)
-                };
-                let (expr, mutability) = self.subst(ty, &ident);
-                let prefix = make_mut_prefix(mutability);
-                (quote! { #prefix #ident }, expr)
-            })
-            .unzip::<TokenStream, TokenStream, Vec<_>, Vec<_>>();
-        (params, exprs)
+    fn subst_many<'j>(&mut self, tys: impl Iterator<Item = &'j mut syn::Type>) -> [Vec<TokenStream>; 3] {
+        let mut params = vec![];
+        let mut stmts = vec![];
+        let mut exprs = vec![];
+        for (i, ty) in tys.enumerate() {
+            let ident = if self.depth == 1 {
+                format_ident!("v{}", i + 1)
+            } else {
+                format_ident!("v{}_{}", self.depth - 1, i + 1)
+            };
+            let mut ctx = self.fork();
+            let (expr, mutability) = ctx.subst(ty, &ident);
+            self.is_dirty |= ctx.is_dirty;
+            let prefix = make_mut_prefix(mutability);
+            if ctx.is_dirty {
+                params.push(quote! { #ident });
+                stmts.push(quote! { let #prefix #ident = #expr; });
+                exprs.push(quote! { #ident });
+            } else {
+                params.push(quote! { #prefix #ident });
+                exprs.push(expr);
+            }
+        }
+        [params, stmts, exprs]
     }
 
     pub fn subst(
@@ -154,17 +163,17 @@ impl<'i> Context<'i> {
                 let args = args.args
                     .iter_mut()
                     .filter_map(|arg| {
-                        let syn::GenericArgument::Type(ty) = arg else {
+                        let syn::GenericArgument::Type(ty_inst) = arg else {
                             return None
                         };
-                        let mut old = ty.clone();
-                        subst_self(&mut old, &syn::parse_quote! { Factory });
-                        let (expr, mutability) = fork.subst(ty, &quote! { x });
+                        let mut ty_cons = ty_inst.clone();
+                        subst_self(&mut ty_cons, &syn::parse_quote! { Factory });
+                        let (expr, mutability) = fork.subst(ty_inst, &quote! { x });
                         let prefix = make_mut_prefix(mutability);
                         Some(if self.polarity {
-                            quote! { |#prefix x: #ty| -> #old { #expr } }
+                            quote! { |#prefix x: #ty_inst| -> #ty_cons { #expr } }
                         } else {
-                            quote! { |#prefix x: #old| -> #ty { #expr } }
+                            quote! { |#prefix x: #ty_cons| -> #ty_inst { #expr } }
                         })
                     })
                     .collect::<Vec<_>>();
@@ -244,15 +253,20 @@ impl<'i> Context<'i> {
                     let syn::PathArguments::Parenthesized(args) = &mut last.arguments else {
                         panic!("expect parenthesized arguments in {} trait", last.ident)
                     };
-                    let (expr, params, is_dirty) = self.subst_fn(args.inputs.iter_mut(), &mut args.output, expr);
+                    let (expr, stmts, params, is_dirty) = self.subst_fn(args.inputs.iter_mut(), &mut args.output, expr);
                     if !is_dirty {
                         break 'k
                     }
+                    let closure = if stmts.len() == 0 {
+                        quote! { |#(#params),*| #expr }
+                    } else {
+                        quote! { |#(#params),*| { #(#stmts)* #expr } }
+                    };
                     self.is_dirty = true;
                     return match self.ref_type {
-                        RefType::Box => (quote! { Box::new(move |#(#params),*| #expr) }, matches!(fn_type, FnTrait::FnMut)),
-                        RefType::Mut => (quote! { &mut |#(#params),*| #expr }, false),
-                        RefType::Ref => (quote! { & |#(#params),*| #expr }, false),
+                        RefType::Box => (quote! { Box::new(move #closure) }, matches!(fn_type, FnTrait::FnMut)),
+                        RefType::Mut => (quote! { &mut #closure }, false),
+                        RefType::Ref => (quote! { & #closure }, false),
                         RefType::None => unreachable!("expect &dyn, &mut dyn or Box<dyn>"),
                     }
                 }

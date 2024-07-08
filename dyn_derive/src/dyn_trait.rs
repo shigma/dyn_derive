@@ -210,7 +210,7 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
                         },
                     }
                 });
-                let (expr, params, _) = ctx.subst_fn(inputs, &mut inst_fn.sig.output, &match has_recv {
+                let (expr, stmts, params, _) = ctx.subst_fn(inputs, &mut inst_fn.sig.output, &match has_recv {
                     true => quote! { self.0.#ident },
                     false => quote! { Factory::#ident },
                 });
@@ -219,7 +219,7 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
                     vis: syn::Visibility::Inherited,
                     defaultness: None,
                     sig: inst_fn.sig.clone(),
-                    block: syn::parse_quote! {{ #expr }},
+                    block: syn::parse_quote! {{ #(#stmts)* #expr }},
                 };
                 impl_fn.sig.inputs
                     .iter_mut()

@@ -43,11 +43,20 @@ pub fn subst_self(ty: &mut syn::Type, repl: &syn::Ident) {
         syn::Type::Reference(reference) => {
             subst_self(&mut reference.elem, repl);
         },
+        syn::Type::Array(array) => {
+            subst_self(&mut array.elem, repl);
+        },
         syn::Type::Slice(slice) => {
             subst_self(&mut slice.elem, repl);
         },
         syn::Type::Ptr(ptr) => {
             subst_self(&mut ptr.elem, repl);
+        },
+        syn::Type::Paren(paren) => {
+            subst_self(&mut paren.elem, repl);
+        },
+        syn::Type::Group(group) => {
+            subst_self(&mut group.elem, repl);
         },
         syn::Type::ImplTrait(impl_trait) => {
             for bound in &mut impl_trait.bounds {
@@ -67,6 +76,14 @@ pub fn subst_self(ty: &mut syn::Type, repl: &syn::Ident) {
                     },
                     _ => {},
                 }
+            }
+        },
+        syn::Type::BareFn(bare_fn) => {
+            for arg in &mut bare_fn.inputs {
+                subst_self(&mut arg.ty, repl);
+            }
+            if let syn::ReturnType::Type(_, ty) = &mut bare_fn.output {
+                subst_self(ty, repl);
             }
         },
         _ => {},
