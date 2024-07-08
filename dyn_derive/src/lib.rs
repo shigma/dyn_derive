@@ -3,6 +3,7 @@
 use proc_macro::TokenStream;
 
 mod dyn_trait;
+mod generics;
 mod subst_self;
 
 /// This is a procedural macro for deriving object-unsafe traits.
