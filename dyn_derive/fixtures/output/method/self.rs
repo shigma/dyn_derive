@@ -17,9 +17,9 @@ for ::dyn_std::Instance<Factory, (T,)> {
     }
     #[inline]
     fn method_2(&self, v1: (T, Box<dyn Meta<T>>, &dyn Meta<T>)) {
-        let v1 = match v1 {
-            (v1, v2, v3) => (v1, Self::downcast(v2), Self::downcast_ref(v3)),
-        };
-        Factory::method_2(v1)
+        let (v1, v2, v3) = v1;
+        let v2 = Self::downcast(v2);
+        let v3 = Self::downcast_ref(v3);
+        Factory::method_2((v1, v2, v3))
     }
 }

@@ -28,7 +28,10 @@ for ::dyn_std::Instance<Factory, (T,)> {
         let v1 = ::dyn_std::map::Map2::map(
             v1,
             |x: Box<dyn Meta<T>>| -> Factory { Self::downcast(x) },
-            |x: ()| -> () { x },
+            |x: ()| -> () {
+                let () = x;
+                ()
+            },
         );
         Factory::result_1(v1)
     }
@@ -56,22 +59,18 @@ for ::dyn_std::Instance<Factory, (T,)> {
             |
                 x: (Box<dyn Meta<T>>, Option<Option<Box<dyn Meta<T>>>>),
             | -> (Factory, Option<Option<Factory>>) {
-                match x {
-                    (v1, v2) => {
-                        (
-                            Self::downcast(v1),
-                            ::dyn_std::map::Map1::map(
-                                v2,
-                                |x: Option<Box<dyn Meta<T>>>| -> Option<Factory> {
-                                    ::dyn_std::map::Map1::map(
-                                        x,
-                                        |x: Box<dyn Meta<T>>| -> Factory { Self::downcast(x) },
-                                    )
-                                },
-                            ),
+                let (v1, v2) = x;
+                let v1 = Self::downcast(v1);
+                let v2 = ::dyn_std::map::Map1::map(
+                    v2,
+                    |x: Option<Box<dyn Meta<T>>>| -> Option<Factory> {
+                        ::dyn_std::map::Map1::map(
+                            x,
+                            |x: Box<dyn Meta<T>>| -> Factory { Self::downcast(x) },
                         )
-                    }
-                }
+                    },
+                );
+                (v1, v2)
             },
         );
         Factory::nested(v1)

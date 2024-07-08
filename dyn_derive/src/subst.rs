@@ -32,6 +32,23 @@ pub struct Context<'i> {
     polarity: bool,
     depth: usize,
     is_dirty: bool,
+    inline: bool,
+    arg_pat: Option<(TokenStream, usize)>,
+}
+
+impl Clone for Context<'_> {
+    fn clone(&self) -> Self {
+        Self {
+            generics: self.generics,
+            polarity: self.polarity,
+            depth: self.depth,
+            // clear
+            ref_type: RefType::None,
+            is_dirty: false,
+            inline: false,
+            arg_pat: None,
+        }
+    }
 }
 
 impl<'i> Context<'i> {
@@ -42,76 +59,53 @@ impl<'i> Context<'i> {
             polarity: false,
             depth: 0,
             is_dirty: false,
+            inline: false,
+            arg_pat: None,
         }
     }
 
-    fn fork_deep(&self, polarity: bool) -> Self {
-        Self {
-            generics: self.generics,
-            ref_type: RefType::None,
-            polarity: self.polarity ^ polarity,
-            depth: self.depth + 1,
-            is_dirty: false,
-        }
-    }
-
-    fn fork_ref(&self, ref_type: RefType) -> Self {
-        Self {
-            generics: self.generics,
-            ref_type,
-            polarity: self.polarity,
-            depth: self.depth,
-            is_dirty: false,
-        }
-    }
-
-    fn fork(&self) -> Self {
-        self.fork_ref(RefType::None)
-    }
-
-    pub fn subst_fn<'j>(&self, inputs: impl Iterator<Item = &'j mut syn::Type>, output: &mut syn::ReturnType, expr: &impl ToTokens) -> (TokenStream, Vec<TokenStream>, Vec<TokenStream>, bool) {
-        let mut ctx_input = self.fork_deep(true);
-        let [params, stmts, exprs] = ctx_input.subst_many(inputs);
-        let expr = quote! { #expr(#(#exprs),*) };
-        let mut ctx_output = self.fork_deep(false);
-        let (expr, _) = match output {
-            syn::ReturnType::Type(_, ty) => ctx_output.subst(ty, &expr),
-            syn::ReturnType::Default => (expr.to_token_stream(), false),
-        };
-        (expr, stmts, params, ctx_input.is_dirty || ctx_output.is_dirty)
-    }
-
-    fn subst_many<'j>(&mut self, tys: impl Iterator<Item = &'j mut syn::Type>) -> [Vec<TokenStream>; 3] {
+    pub fn subst_fn<'j>(&mut self, inputs: impl Iterator<Item = &'j mut syn::Type>, output: &mut syn::ReturnType, expr: &impl ToTokens) -> (TokenStream, TokenStream, Vec<TokenStream>) {
         let mut params = vec![];
-        let mut stmts = vec![];
         let mut exprs = vec![];
-        for (i, ty) in tys.enumerate() {
-            let ident = if self.depth == 1 {
-                format_ident!("v{}", i + 1)
+        let mut stmts = quote![];
+        let mut i: usize = 0;
+        for ty in inputs {
+            i += 1;
+            let ident = if self.depth == 0 {
+                format_ident!("v{}", i)
             } else {
-                format_ident!("v{}_{}", self.depth - 1, i + 1)
+                format_ident!("v{}_{}", self.depth, i)
             };
-            let mut ctx = self.fork();
-            let (expr, mutability) = ctx.subst(ty, &ident);
+            let mut ctx = self.clone();
+            ctx.polarity ^= true;
+            ctx.depth += 1;
+            ctx.arg_pat = Some((quote! { #ident }, i));
+            let (expr, inner_stmts, mutability) = ctx.subst(ty, &ident);
             self.is_dirty |= ctx.is_dirty;
+            stmts.extend(inner_stmts);
             let prefix = make_mut_prefix(mutability);
-            if ctx.is_dirty {
+            if ctx.is_dirty && !ctx.inline {
                 params.push(quote! { #ident });
-                stmts.push(quote! { let #prefix #ident = #expr; });
                 exprs.push(quote! { #ident });
+                stmts.extend(quote! { let #prefix #ident = #expr; });
             } else {
-                params.push(quote! { #prefix #ident });
                 exprs.push(expr);
+                params.push(quote! { #prefix #ident });
             }
         }
-        [params, stmts, exprs]
+        let expr = quote! { #expr(#(#exprs),*) };
+        let mut ctx = self.clone();
+        ctx.depth += 1;
+        let (expr, inner_stmts, _) = match output {
+            syn::ReturnType::Type(_, ty) => ctx.subst(ty, &expr),
+            syn::ReturnType::Default => (expr.to_token_stream(), quote!{}, false),
+        };
+        self.is_dirty |= ctx.is_dirty;
+        stmts.extend(inner_stmts);
+        (expr, stmts, params)
     }
 
-    pub fn subst(
-        &mut self,
-        ty: &mut syn::Type,
-        expr: &impl ToTokens,
-    ) -> (TokenStream, bool) {
+    pub fn subst(&mut self, ty: &mut syn::Type, expr: &impl ToTokens) -> (TokenStream, TokenStream, bool) {
         match ty {
             syn::Type::Path(tp) => 'k: {
                 if tp.qself.is_none() && tp.path.segments.len() == 1 {
@@ -126,8 +120,9 @@ impl<'i> Context<'i> {
                         let syn::GenericArgument::Type(ty) = args.args.first_mut().unwrap() else {
                             panic!("expect type argument in Box type")
                         };
-                        let mut ctx = self.fork_ref(RefType::Box);
-                        let (expr, mutability) = ctx.subst(ty, expr);
+                        let mut ctx = self.clone();
+                        ctx.ref_type = RefType::Box;
+                        let result = ctx.subst(ty, expr);
                         if !ctx.is_dirty {
                             break 'k
                         }
@@ -135,7 +130,7 @@ impl<'i> Context<'i> {
                             unimplemented!("nested reference in trait method")
                         }
                         self.is_dirty = true;
-                        return (expr, mutability)
+                        return result
                     }
                 }
                 let result = self.generics.test(tp, self.ref_type != RefType::None);
@@ -154,12 +149,12 @@ impl<'i> Context<'i> {
                             RefType::None => quote! { Box::new(::dyn_std::Instance::new(#expr)) },
                             _ => unimplemented!("reference in trait method return type"),
                         }
-                    }, false)
+                    }, quote![], false)
                 }
                 let syn::PathArguments::AngleBracketed(args) = &mut tp.path.segments.last_mut().unwrap().arguments else {
                     break 'k
                 };
-                let mut fork = self.fork();
+                let mut ctx = self.clone();
                 let args = args.args
                     .iter_mut()
                     .filter_map(|arg| {
@@ -168,29 +163,30 @@ impl<'i> Context<'i> {
                         };
                         let mut ty_cons = ty_inst.clone();
                         subst_self(&mut ty_cons, &syn::parse_quote! { Factory });
-                        let (expr, mutability) = fork.subst(ty_inst, &quote! { x });
+                        let (expr, stmts, mutability) = ctx.subst(ty_inst, &quote! { x });
                         let prefix = make_mut_prefix(mutability);
                         Some(if self.polarity {
-                            quote! { |#prefix x: #ty_inst| -> #ty_cons { #expr } }
+                            quote! { |#prefix x: #ty_inst| -> #ty_cons { #stmts #expr } }
                         } else {
-                            quote! { |#prefix x: #ty_cons| -> #ty_inst { #expr } }
+                            quote! { |#prefix x: #ty_cons| -> #ty_inst { #stmts #expr } }
                         })
                     })
                     .collect::<Vec<_>>();
-                if !fork.is_dirty {
+                if !ctx.is_dirty {
                     break 'k
                 }
                 let len = args.len();
                 let ident = format_ident!("Map{}", len);
                 self.is_dirty = true;
-                return (quote! { ::dyn_std::map::#ident::map(#expr, #(#args),*) }, false)
+                return (quote! { ::dyn_std::map::#ident::map(#expr, #(#args),*) }, quote![], false)
             },
             syn::Type::Reference(tr) => 'k: {
-                let mut ctx = self.fork_ref(match tr.mutability {
+                let mut ctx = self.clone();
+                ctx.ref_type = match tr.mutability {
                     Some(_) => RefType::Mut,
                     None => RefType::Ref,
-                });
-                let (expr, mutability) = ctx.subst(&mut tr.elem, expr);
+                };
+                let result = ctx.subst(&mut tr.elem, expr);
                 if !ctx.is_dirty {
                     break 'k
                 }
@@ -198,35 +194,45 @@ impl<'i> Context<'i> {
                     unimplemented!("nested reference in trait method")
                 }
                 self.is_dirty = true;
-                return (expr, mutability)
+                return result
             },
             syn::Type::Tuple(tuple) => 'k: {
-                let mut ctx = self.fork();
-                let (idents, values) = tuple.elems.iter_mut().enumerate().map(|(i, ty)| {
+                let mut stmts = quote![];
+                let (pats, exprs) = tuple.elems.iter_mut().enumerate().map(|(i, ty)| {
                     let ident = format_ident!("v{}", i + 1);
-                    let (expr, mutability) = ctx.subst(ty, &ident);
+                    let mut ctx = self.clone();
+                    let (expr, inner_stmts, mutability) = ctx.subst(ty, &ident);
+                    self.is_dirty |= ctx.is_dirty;
+                    stmts.extend(inner_stmts);
                     let prefix = make_mut_prefix(mutability);
-                    (quote! { #prefix #ident }, expr)
+                    if ctx.is_dirty && !ctx.inline {
+                        stmts.extend(quote! { let #prefix #ident = #expr; });
+                        (quote! { #ident }, quote! { #ident })
+                    } else {
+                        (quote! { #prefix #ident }, expr)
+                    }
                 }).unzip::<TokenStream, TokenStream, Vec<_>, Vec<_>>();
-                if !ctx.is_dirty {
+                if !self.is_dirty {
                     break 'k
                 }
                 self.is_dirty = true;
+                self.inline = true;
                 return (quote! {
-                    match #expr {
-                        (#(#idents),*) => (#(#values),*)
-                    }
+                    (#(#exprs),*)
+                }, quote! {
+                    let (#(#pats),*) = #expr;
+                    #stmts
                 }, false)
             },
             syn::Type::Slice(slice) => {
-                let mut ctx = self.fork();
+                let mut ctx = self.clone();
                 let _ = ctx.subst(&mut slice.elem, expr);
                 if ctx.is_dirty {
                     unimplemented!("slice types in trait methods")
                 }
             },
             syn::Type::Ptr(ptr) => {
-                let mut ctx = self.fork();
+                let mut ctx = self.clone();
                 let _ = ctx.subst(&mut ptr.elem, expr);
                 if ctx.is_dirty {
                     unimplemented!("pointers in trait methods")
@@ -253,26 +259,25 @@ impl<'i> Context<'i> {
                     let syn::PathArguments::Parenthesized(args) = &mut last.arguments else {
                         panic!("expect parenthesized arguments in {} trait", last.ident)
                     };
-                    let (expr, stmts, params, is_dirty) = self.subst_fn(args.inputs.iter_mut(), &mut args.output, expr);
-                    if !is_dirty {
+                    let (expr, stmts, params) = self.subst_fn(args.inputs.iter_mut(), &mut args.output, expr);
+                    if !self.is_dirty {
                         break 'k
                     }
-                    let closure = if stmts.len() == 0 {
+                    let closure = if stmts.is_empty() {
                         quote! { |#(#params),*| #expr }
                     } else {
-                        quote! { |#(#params),*| { #(#stmts)* #expr } }
+                        quote! { |#(#params),*| { #stmts #expr } }
                     };
-                    self.is_dirty = true;
                     return match self.ref_type {
-                        RefType::Box => (quote! { Box::new(move #closure) }, matches!(fn_type, FnTrait::FnMut)),
-                        RefType::Mut => (quote! { &mut #closure }, false),
-                        RefType::Ref => (quote! { & #closure }, false),
+                        RefType::Box => (quote! { Box::new(move #closure) }, quote![], matches!(fn_type, FnTrait::FnMut)),
+                        RefType::Mut => (quote! { &mut #closure }, quote![], false),
+                        RefType::Ref => (quote! { & #closure }, quote![], false),
                         RefType::None => unreachable!("expect &dyn, &mut dyn or Box<dyn>"),
                     }
                 }
             },
             _ => {},
         }
-        (expr.to_token_stream(), false)
+        (expr.to_token_stream(), quote![], false)
     }
 }
