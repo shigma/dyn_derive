@@ -18,11 +18,14 @@ enum RefType {
     None,
 }
 
-fn make_mut_prefix(mutability: bool) -> TokenStream {
-    if mutability {
-        quote! { mut }
-    } else {
-        quote! {}
+pub enum Destruct {
+    Preserve(TokenStream),
+    Tuple(TokenStream),
+}
+
+impl Default for Destruct {
+    fn default() -> Self {
+        Self::Preserve(quote! {})
     }
 }
 
@@ -31,9 +34,9 @@ pub struct Context<'i> {
     ref_type: RefType,
     polarity: bool,
     depth: usize,
+    offset: usize,
     is_dirty: bool,
     inline: bool,
-    arg_pat: Option<(TokenStream, usize)>,
 }
 
 impl Clone for Context<'_> {
@@ -42,11 +45,11 @@ impl Clone for Context<'_> {
             generics: self.generics,
             polarity: self.polarity,
             depth: self.depth,
+            offset: self.offset,
             // clear
             ref_type: RefType::None,
             is_dirty: false,
             inline: false,
-            arg_pat: None,
         }
     }
 }
@@ -58,9 +61,27 @@ impl<'i> Context<'i> {
             ref_type: RefType::None,
             polarity: false,
             depth: 0,
+            offset: 0,
             is_dirty: false,
             inline: false,
-            arg_pat: None,
+        }
+    }
+
+    fn subst_ident(&mut self, ty: &mut syn::Type, ident: &syn::Ident, stmts: &mut TokenStream) -> (TokenStream, TokenStream) {
+        let (expr, inner_stmts, destruct) = self.subst(ty, &ident);
+        stmts.extend(inner_stmts);
+        match destruct {
+            Destruct::Preserve(pref) => {
+                if self.is_dirty {
+                    stmts.extend(quote! { let #pref #ident = #expr; });
+                    (quote! { #ident }, quote! { #ident })
+                } else {
+                    (quote! { #pref #ident }, expr)
+                }
+            },
+            Destruct::Tuple(pat) => {
+                (quote! { #pat }, expr)
+            },
         }
     }
 
@@ -68,44 +89,41 @@ impl<'i> Context<'i> {
         let mut params = vec![];
         let mut exprs = vec![];
         let mut stmts = quote![];
-        let mut i: usize = 0;
+        let mut offset = 0;
         for ty in inputs {
-            i += 1;
+            offset += 1;
             let ident = if self.depth == 0 {
-                format_ident!("v{}", i)
+                format_ident!("v{}", offset)
             } else {
-                format_ident!("v{}_{}", self.depth, i)
+                format_ident!("v{}_{}", self.depth, offset)
             };
             let mut ctx = self.clone();
             ctx.polarity ^= true;
             ctx.depth += 1;
-            ctx.arg_pat = Some((quote! { #ident }, i));
-            let (expr, inner_stmts, mutability) = ctx.subst(ty, &ident);
+            ctx.offset = offset - 1;
+            let (pat, expr) = ctx.subst_ident(ty, &ident, &mut stmts);
             self.is_dirty |= ctx.is_dirty;
-            stmts.extend(inner_stmts);
-            let prefix = make_mut_prefix(mutability);
-            if ctx.is_dirty && !ctx.inline {
-                params.push(quote! { #ident });
-                exprs.push(quote! { #ident });
-                stmts.extend(quote! { let #prefix #ident = #expr; });
-            } else {
-                exprs.push(expr);
-                params.push(quote! { #prefix #ident });
-            }
+            offset = ctx.offset;
+            exprs.push(expr);
+            params.push(pat);
         }
         let expr = quote! { #expr(#(#exprs),*) };
         let mut ctx = self.clone();
         ctx.depth += 1;
-        let (expr, inner_stmts, _) = match output {
+        ctx.offset = 0;
+        let (new_expr, inner_stmts, destruct) = match output {
             syn::ReturnType::Type(_, ty) => ctx.subst(ty, &expr),
-            syn::ReturnType::Default => (expr.to_token_stream(), quote!{}, false),
+            syn::ReturnType::Default => (expr.to_token_stream(), quote!{}, Default::default()),
         };
+        if let Destruct::Tuple(pat) = destruct {
+            stmts.extend(quote! { let #pat = #expr; });
+        }
         self.is_dirty |= ctx.is_dirty;
         stmts.extend(inner_stmts);
-        (expr, stmts, params)
+        (new_expr, stmts, params)
     }
 
-    pub fn subst(&mut self, ty: &mut syn::Type, expr: &impl ToTokens) -> (TokenStream, TokenStream, bool) {
+    pub fn subst(&mut self, ty: &mut syn::Type, expr: &impl ToTokens) -> (TokenStream, TokenStream, Destruct) {
         match ty {
             syn::Type::Path(tp) => 'k: {
                 if tp.qself.is_none() && tp.path.segments.len() == 1 {
@@ -149,12 +167,11 @@ impl<'i> Context<'i> {
                             RefType::None => quote! { Box::new(::dyn_std::Instance::new(#expr)) },
                             _ => unimplemented!("reference in trait method return type"),
                         }
-                    }, quote![], false)
+                    }, quote![], Default::default())
                 }
                 let syn::PathArguments::AngleBracketed(args) = &mut tp.path.segments.last_mut().unwrap().arguments else {
                     break 'k
                 };
-                let mut ctx = self.clone();
                 let args = args.args
                     .iter_mut()
                     .filter_map(|arg| {
@@ -163,30 +180,40 @@ impl<'i> Context<'i> {
                         };
                         let mut ty_cons = ty_inst.clone();
                         subst_self(&mut ty_cons, &syn::parse_quote! { Factory });
-                        let (expr, stmts, mutability) = ctx.subst(ty_inst, &quote! { x });
-                        let prefix = make_mut_prefix(mutability);
-                        Some(if self.polarity {
-                            quote! { |#prefix x: #ty_inst| -> #ty_cons { #stmts #expr } }
-                        } else {
-                            quote! { |#prefix x: #ty_cons| -> #ty_inst { #stmts #expr } }
+                        let mut ctx = self.clone();
+                        let (expr, stmts, destruct) = ctx.subst(ty_inst, &quote! { x });
+                        let pat = match destruct {
+                            Destruct::Preserve(modifier) => quote! { #modifier x },
+                            Destruct::Tuple(pat) => pat,
+                        };
+                        self.is_dirty |= ctx.is_dirty;
+                        Some(match ctx.is_dirty {
+                            true => match self.polarity {
+                                true => quote! { |#pat: #ty_inst| -> #ty_cons { #stmts #expr } },
+                                false => quote! { |#pat: #ty_cons| -> #ty_inst { #stmts #expr } },
+                            },
+                            false => {
+                                assert_eq!(ty_inst, &ty_cons);
+                                assert!(stmts.is_empty());
+                                quote! { |x: #ty_inst| x }
+                            },
                         })
                     })
                     .collect::<Vec<_>>();
-                if !ctx.is_dirty {
+                if !self.is_dirty {
                     break 'k
                 }
                 let len = args.len();
                 let ident = format_ident!("Map{}", len);
-                self.is_dirty = true;
-                return (quote! { ::dyn_std::map::#ident::map(#expr, #(#args),*) }, quote![], false)
+                return (quote! { ::dyn_std::map::#ident::map(#expr, #(#args),*) }, quote![], Default::default())
             },
-            syn::Type::Reference(tr) => 'k: {
+            syn::Type::Reference(reference) => 'k: {
                 let mut ctx = self.clone();
-                ctx.ref_type = match tr.mutability {
+                ctx.ref_type = match reference.mutability {
                     Some(_) => RefType::Mut,
                     None => RefType::Ref,
                 };
-                let result = ctx.subst(&mut tr.elem, expr);
+                let result = ctx.subst(&mut reference.elem, expr);
                 if !ctx.is_dirty {
                     break 'k
                 }
@@ -198,31 +225,22 @@ impl<'i> Context<'i> {
             },
             syn::Type::Tuple(tuple) => 'k: {
                 let mut stmts = quote![];
-                let (pats, exprs) = tuple.elems.iter_mut().enumerate().map(|(i, ty)| {
-                    let ident = format_ident!("v{}", i + 1);
+                let (pats, exprs) = tuple.elems.iter_mut().map(|ty| {
+                    self.offset += 1;
+                    let ident = format_ident!("v{}", self.offset);
                     let mut ctx = self.clone();
-                    let (expr, inner_stmts, mutability) = ctx.subst(ty, &ident);
+                    ctx.offset = self.offset - 1;
+                    let (pat, expr) = ctx.subst_ident(ty, &ident, &mut stmts);
                     self.is_dirty |= ctx.is_dirty;
-                    stmts.extend(inner_stmts);
-                    let prefix = make_mut_prefix(mutability);
-                    if ctx.is_dirty && !ctx.inline {
-                        stmts.extend(quote! { let #prefix #ident = #expr; });
-                        (quote! { #ident }, quote! { #ident })
-                    } else {
-                        (quote! { #prefix #ident }, expr)
-                    }
+                    self.offset = ctx.offset + 1;
+                    (pat, expr)
                 }).unzip::<TokenStream, TokenStream, Vec<_>, Vec<_>>();
                 if !self.is_dirty {
                     break 'k
                 }
                 self.is_dirty = true;
                 self.inline = true;
-                return (quote! {
-                    (#(#exprs),*)
-                }, quote! {
-                    let (#(#pats),*) = #expr;
-                    #stmts
-                }, false)
+                return (quote! { (#(#exprs),*) }, stmts, Destruct::Tuple(quote! { (#(#pats),*) }))
             },
             syn::Type::Slice(slice) => {
                 let mut ctx = self.clone();
@@ -269,15 +287,18 @@ impl<'i> Context<'i> {
                         quote! { |#(#params),*| { #stmts #expr } }
                     };
                     return match self.ref_type {
-                        RefType::Box => (quote! { Box::new(move #closure) }, quote![], matches!(fn_type, FnTrait::FnMut)),
-                        RefType::Mut => (quote! { &mut #closure }, quote![], false),
-                        RefType::Ref => (quote! { & #closure }, quote![], false),
+                        RefType::Box => (quote! { Box::new(move #closure) }, quote![], Destruct::Preserve(match fn_type {
+                            FnTrait::FnMut => quote! { mut },
+                            _ => quote! {},
+                        })),
+                        RefType::Mut => (quote! { &mut #closure }, quote![], Default::default()),
+                        RefType::Ref => (quote! { & #closure }, quote![], Default::default()),
                         RefType::None => unreachable!("expect &dyn, &mut dyn or Box<dyn>"),
                     }
                 }
             },
             _ => {},
         }
-        (expr.to_token_stream(), quote![], false)
+        (expr.to_token_stream(), quote![], Default::default())
     }
 }
