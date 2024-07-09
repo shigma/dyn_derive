@@ -34,7 +34,6 @@ pub struct Context<'i> {
     ref_type: RefType,
     polarity: bool,
     depth: usize,
-    offset: usize,
     is_dirty: bool,
     inline: bool,
 }
@@ -45,7 +44,6 @@ impl Clone for Context<'_> {
             generics: self.generics,
             polarity: self.polarity,
             depth: self.depth,
-            offset: self.offset,
             // clear
             ref_type: RefType::None,
             is_dirty: false,
@@ -61,14 +59,13 @@ impl<'i> Context<'i> {
             ref_type: RefType::None,
             polarity: false,
             depth: 0,
-            offset: 0,
             is_dirty: false,
             inline: false,
         }
     }
 
-    fn subst_ident(&mut self, ty: &mut syn::Type, ident: &syn::Ident, stmts: &mut TokenStream) -> (TokenStream, TokenStream) {
-        let (expr, inner_stmts, destruct) = self.subst(ty, &ident);
+    fn subst_ident(&mut self, ty: &mut syn::Type, ident: &syn::Ident, stmts: &mut TokenStream, offset: &mut usize) -> (TokenStream, TokenStream) {
+        let (expr, inner_stmts, destruct) = self.subst(ty, &ident, offset);
         stmts.extend(inner_stmts);
         match destruct {
             Destruct::Preserve(pref) => {
@@ -80,6 +77,7 @@ impl<'i> Context<'i> {
                 }
             },
             Destruct::Tuple(pat) => {
+                *offset -= 1;
                 (quote! { #pat }, expr)
             },
         }
@@ -91,28 +89,25 @@ impl<'i> Context<'i> {
         let mut stmts = quote![];
         let mut offset = 0;
         for ty in inputs {
-            offset += 1;
             let ident = if self.depth == 0 {
-                format_ident!("v{}", offset)
+                format_ident!("v{}", offset + 1)
             } else {
-                format_ident!("v{}_{}", self.depth, offset)
+                format_ident!("v{}_{}", self.depth, offset + 1)
             };
             let mut ctx = self.clone();
             ctx.polarity ^= true;
             ctx.depth += 1;
-            ctx.offset = offset - 1;
-            let (pat, expr) = ctx.subst_ident(ty, &ident, &mut stmts);
+            let (pat, expr) = ctx.subst_ident(ty, &ident, &mut stmts, &mut offset);
             self.is_dirty |= ctx.is_dirty;
-            offset = ctx.offset;
+            offset += 1;
             exprs.push(expr);
             params.push(pat);
         }
         let expr = quote! { #expr(#(#exprs),*) };
         let mut ctx = self.clone();
         ctx.depth += 1;
-        ctx.offset = 0;
         let (new_expr, inner_stmts, destruct) = match output {
-            syn::ReturnType::Type(_, ty) => ctx.subst(ty, &expr),
+            syn::ReturnType::Type(_, ty) => ctx.subst(ty, &expr, &mut offset),
             syn::ReturnType::Default => (expr.to_token_stream(), quote!{}, Default::default()),
         };
         if let Destruct::Tuple(pat) = destruct {
@@ -123,7 +118,7 @@ impl<'i> Context<'i> {
         (new_expr, stmts, params)
     }
 
-    pub fn subst(&mut self, ty: &mut syn::Type, expr: &impl ToTokens) -> (TokenStream, TokenStream, Destruct) {
+    pub fn subst(&mut self, ty: &mut syn::Type, expr: &impl ToTokens, offset: &mut usize) -> (TokenStream, TokenStream, Destruct) {
         match ty {
             syn::Type::Path(tp) => 'k: {
                 if tp.qself.is_none() && tp.path.segments.len() == 1 {
@@ -140,7 +135,7 @@ impl<'i> Context<'i> {
                         };
                         let mut ctx = self.clone();
                         ctx.ref_type = RefType::Box;
-                        let result = ctx.subst(ty, expr);
+                        let result = ctx.subst(ty, expr, offset);
                         if !ctx.is_dirty {
                             break 'k
                         }
@@ -181,7 +176,7 @@ impl<'i> Context<'i> {
                         let mut ty_cons = ty_inst.clone();
                         subst_self(&mut ty_cons, &syn::parse_quote! { Factory });
                         let mut ctx = self.clone();
-                        let (expr, stmts, destruct) = ctx.subst(ty_inst, &quote! { x });
+                        let (expr, stmts, destruct) = ctx.subst(ty_inst, &quote! { x }, offset);
                         let pat = match destruct {
                             Destruct::Preserve(modifier) => quote! { #modifier x },
                             Destruct::Tuple(pat) => pat,
@@ -213,7 +208,7 @@ impl<'i> Context<'i> {
                     Some(_) => RefType::Mut,
                     None => RefType::Ref,
                 };
-                let result = ctx.subst(&mut reference.elem, expr);
+                let result = ctx.subst(&mut reference.elem, expr, offset);
                 if !ctx.is_dirty {
                     break 'k
                 }
@@ -226,13 +221,11 @@ impl<'i> Context<'i> {
             syn::Type::Tuple(tuple) => 'k: {
                 let mut stmts = quote![];
                 let (pats, exprs) = tuple.elems.iter_mut().map(|ty| {
-                    self.offset += 1;
-                    let ident = format_ident!("v{}", self.offset);
+                    let ident = format_ident!("v{}", *offset + 1);
                     let mut ctx = self.clone();
-                    ctx.offset = self.offset - 1;
-                    let (pat, expr) = ctx.subst_ident(ty, &ident, &mut stmts);
+                    let (pat, expr) = ctx.subst_ident(ty, &ident, &mut stmts, offset);
+                    *offset += 1;
                     self.is_dirty |= ctx.is_dirty;
-                    self.offset = ctx.offset + 1;
                     (pat, expr)
                 }).unzip::<TokenStream, TokenStream, Vec<_>, Vec<_>>();
                 if !self.is_dirty {
@@ -244,14 +237,14 @@ impl<'i> Context<'i> {
             },
             syn::Type::Slice(slice) => {
                 let mut ctx = self.clone();
-                let _ = ctx.subst(&mut slice.elem, expr);
+                ctx.subst(&mut slice.elem, expr, offset);
                 if ctx.is_dirty {
                     unimplemented!("slice types in trait methods")
                 }
             },
             syn::Type::Ptr(ptr) => {
                 let mut ctx = self.clone();
-                let _ = ctx.subst(&mut ptr.elem, expr);
+                ctx.subst(&mut ptr.elem, expr, offset);
                 if ctx.is_dirty {
                     unimplemented!("pointers in trait methods")
                 }

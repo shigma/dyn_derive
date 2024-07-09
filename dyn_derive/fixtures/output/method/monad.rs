@@ -28,10 +28,7 @@ for ::dyn_std::Instance<Factory, (T,)> {
         let v1 = ::dyn_std::map::Map2::map(
             v1,
             |x: Box<dyn Meta<T>>| -> Factory { Self::downcast(x) },
-            |x: ()| -> () {
-                let () = x;
-                ()
-            },
+            |x: ()| x,
         );
         Factory::result_1(v1)
     }
@@ -39,7 +36,7 @@ for ::dyn_std::Instance<Factory, (T,)> {
     fn result_2(&self, v1: Result<(), Box<dyn Meta<T>>>) {
         let v1 = ::dyn_std::map::Map2::map(
             v1,
-            |x: ()| -> () { x },
+            |x: ()| x,
             |x: Box<dyn Meta<T>>| -> Factory { Self::downcast(x) },
         );
         Factory::result_2(v1)
@@ -57,9 +54,8 @@ for ::dyn_std::Instance<Factory, (T,)> {
         let v1 = ::dyn_std::map::Map1::map(
             v1,
             |
-                x: (Box<dyn Meta<T>>, Option<Option<Box<dyn Meta<T>>>>),
+                (v1, v2): (Box<dyn Meta<T>>, Option<Option<Box<dyn Meta<T>>>>),
             | -> (Factory, Option<Option<Factory>>) {
-                let (v1, v2) = x;
                 let v1 = Self::downcast(v1);
                 let v2 = ::dyn_std::map::Map1::map(
                     v2,
