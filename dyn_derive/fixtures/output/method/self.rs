@@ -10,15 +10,15 @@ trait MetaFactory<T: 'static>: Sized + 'static {
 impl<T: 'static, Factory: MetaFactory<T>> Meta<T>
 for ::dyn_std::Instance<Factory, (T,)> {
     #[inline]
-    fn method_1(&self, v1: Box<dyn Meta<T>>, v2: &dyn Meta<T>) {
-        let v1 = Self::downcast(v1);
-        let v2 = Self::downcast_ref(v2);
-        Factory::method_1(v1, v2)
+    fn method_1(&self, a1: Box<dyn Meta<T>>, a2: &dyn Meta<T>) {
+        let a1 = Self::downcast(a1);
+        let a2 = Self::downcast_ref(a2);
+        Factory::method_1(a1, a2)
     }
     #[inline]
-    fn method_2(&self, (v1, v2, v3): (T, Box<dyn Meta<T>>, &dyn Meta<T>)) {
-        let v2 = Self::downcast(v2);
-        let v3 = Self::downcast_ref(v3);
-        Factory::method_2((v1, v2, v3))
+    fn method_2(&self, (a1, a2, a3): (T, Box<dyn Meta<T>>, &dyn Meta<T>)) {
+        let a2 = Self::downcast(a2);
+        let a3 = Self::downcast_ref(a3);
+        Factory::method_2((a1, a2, a3))
     }
 }

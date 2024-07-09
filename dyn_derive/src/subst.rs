@@ -83,20 +83,21 @@ impl<'i> Context<'i> {
         }
     }
 
+    fn format_ident(&self, offset: usize) -> syn::Ident {
+        let char = (b'a' + (self.depth as u8 - 1)) as char;
+        format_ident!("{}{}", char, offset + 1)
+    }
+
     pub fn subst_fn<'j>(&mut self, inputs: impl Iterator<Item = &'j mut syn::Type>, output: &mut syn::ReturnType, expr: &impl ToTokens) -> (TokenStream, TokenStream, Vec<TokenStream>) {
         let mut params = vec![];
         let mut exprs = vec![];
         let mut stmts = quote![];
         let mut offset = 0;
         for ty in inputs {
-            let ident = if self.depth == 0 {
-                format_ident!("v{}", offset + 1)
-            } else {
-                format_ident!("v{}_{}", self.depth, offset + 1)
-            };
             let mut ctx = self.clone();
             ctx.polarity ^= true;
             ctx.depth += 1;
+            let ident = ctx.format_ident(offset);
             let (pat, expr) = ctx.subst_ident(ty, &ident, &mut stmts, &mut offset);
             self.is_dirty |= ctx.is_dirty;
             offset += 1;
@@ -221,7 +222,7 @@ impl<'i> Context<'i> {
             syn::Type::Tuple(tuple) => 'k: {
                 let mut stmts = quote![];
                 let (pats, exprs) = tuple.elems.iter_mut().map(|ty| {
-                    let ident = format_ident!("v{}", *offset + 1);
+                    let ident = self.format_ident(*offset);
                     let mut ctx = self.clone();
                     let (pat, expr) = ctx.subst_ident(ty, &ident, &mut stmts, offset);
                     *offset += 1;

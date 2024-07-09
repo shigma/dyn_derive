@@ -12,15 +12,15 @@ trait MetaFactory<T: 'static>: Sized + 'static {
 impl<T: 'static, Factory: MetaFactory<T>> Meta<T>
 for ::dyn_std::Instance<Factory, (T,)> {
     #[inline]
-    fn method_1(&self, v1: i32) {
-        Factory::method_1(v1)
+    fn method_1(&self, a1: i32) {
+        Factory::method_1(a1)
     }
     #[inline]
-    fn method_2(&self, v1: Vec<T>) {
-        Factory::method_2(v1)
+    fn method_2(&self, a1: Vec<T>) {
+        Factory::method_2(a1)
     }
     #[inline]
-    fn method_3(&self, v1: i32, v2: (Rc<T>, Result<(), T>)) {
-        Factory::method_3(v1, v2)
+    fn method_3(&self, a1: i32, a2: (Rc<T>, Result<(), T>)) {
+        Factory::method_3(a1, a2)
     }
 }

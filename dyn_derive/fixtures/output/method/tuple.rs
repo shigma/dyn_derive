@@ -14,37 +14,37 @@ trait MetaFactory<T: 'static>: Sized + 'static {
 impl<T: 'static, Factory: MetaFactory<T>> Meta<T>
 for ::dyn_std::Instance<Factory, (T,)> {
     #[inline]
-    fn tuple_1(&self, ((v1, v2), v3): ((Box<dyn Meta<T>>, T), Box<dyn Meta<T>>), v4: T) {
-        let v1 = Self::downcast(v1);
-        let v3 = Self::downcast(v3);
-        Factory::tuple_1(((v1, v2), v3), v4)
+    fn tuple_1(&self, ((a1, a2), a3): ((Box<dyn Meta<T>>, T), Box<dyn Meta<T>>), a4: T) {
+        let a1 = Self::downcast(a1);
+        let a3 = Self::downcast(a3);
+        Factory::tuple_1(((a1, a2), a3), a4)
     }
     #[inline]
     fn tuple_2(&self) -> (T, (Box<dyn Meta<T>>, (T, Box<dyn Meta<T>>))) {
-        let (v1, (v2, (v3, v4))) = Factory::tuple_2();
-        let v2 = Box::new(::dyn_std::Instance::new(v2));
-        let v4 = Box::new(::dyn_std::Instance::new(v4));
-        (v1, (v2, (v3, v4)))
+        let (a1, (a2, (a3, a4))) = Factory::tuple_2();
+        let a2 = Box::new(::dyn_std::Instance::new(a2));
+        let a4 = Box::new(::dyn_std::Instance::new(a4));
+        (a1, (a2, (a3, a4)))
     }
     #[inline]
     fn tuple_3(
         &self,
-        (v1, v2): (T, Option<Box<dyn Meta<T>>>),
+        (a1, a2): (T, Option<Box<dyn Meta<T>>>),
     ) -> Vec<(Box<dyn Meta<T>>, T)> {
-        let v2 = ::dyn_std::map::Map1::map(
-            v2,
+        let a2 = ::dyn_std::map::Map1::map(
+            a2,
             |x: Box<dyn Meta<T>>| -> Factory { Self::downcast(x) },
         );
         ::dyn_std::map::Map1::map(
-            Factory::tuple_3((v1, v2)),
-            |(v3, v4): (Factory, T)| -> (Box<dyn Meta<T>>, T) {
-                let v3 = Box::new(::dyn_std::Instance::new(v3));
-                (v3, v4)
+            Factory::tuple_3((a1, a2)),
+            |(a3, a4): (Factory, T)| -> (Box<dyn Meta<T>>, T) {
+                let a3 = Box::new(::dyn_std::Instance::new(a3));
+                (a3, a4)
             },
         )
     }
     #[inline]
-    fn tuple_4(&self, v1: (T, Vec<T>)) -> (Option<T>, T) {
-        Factory::tuple_4(v1)
+    fn tuple_4(&self, a1: (T, Vec<T>)) -> (Option<T>, T) {
+        Factory::tuple_4(a1)
     }
 }
