@@ -19,6 +19,18 @@ map_trait!(Map4; S1, S2, S3, S4; T1, T2, T3, T4; f1, f2, f3, f4);
 map_trait!(Map5; S1, S2, S3, S4, S5; T1, T2, T3, T4, T5; f1, f2, f3, f4, f5);
 map_trait!(Map6; S1, S2, S3, S4, S5, S6; T1, T2, T3, T4, T5, T6; f1, f2, f3, f4, f5, f6);
 
+impl<T1, const N: usize> Map1<T1> for [T1; N] {
+    type Input<S1> = [S1; N];
+    #[inline]
+    fn map<S1>(value: Self::Input<S1>, f1: fn(S1) -> T1) -> Self {
+        let mut result: [T1; N] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+        for (i, value) in value.into_iter().enumerate() {
+            result[i] = f1(value);
+        }
+        result
+    }
+}
+
 impl<T1> Map1<T1> for Option<T1> {
     type Input<S1> = Option<S1>;
     #[inline]

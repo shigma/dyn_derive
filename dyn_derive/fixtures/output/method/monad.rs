@@ -54,11 +54,11 @@ for ::dyn_std::Instance<Factory, (T,)> {
         let a1 = ::dyn_std::map::Map1::map(
             a1,
             |
-                (a1, a2): (Box<dyn Meta<T>>, Option<Option<Box<dyn Meta<T>>>>),
+                (b1, b2): (Box<dyn Meta<T>>, Option<Option<Box<dyn Meta<T>>>>),
             | -> (Factory, Option<Option<Factory>>) {
-                let a1 = Self::downcast(a1);
-                let a2 = ::dyn_std::map::Map1::map(
-                    a2,
+                let b1 = Self::downcast(b1);
+                let b2 = ::dyn_std::map::Map1::map(
+                    b2,
                     |x: Option<Box<dyn Meta<T>>>| -> Option<Factory> {
                         ::dyn_std::map::Map1::map(
                             x,
@@ -66,7 +66,7 @@ for ::dyn_std::Instance<Factory, (T,)> {
                         )
                     },
                 );
-                (a1, a2)
+                (b1, b2)
             },
         );
         Factory::nested(a1)

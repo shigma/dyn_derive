@@ -37,9 +37,9 @@ for ::dyn_std::Instance<Factory, (T,)> {
         );
         ::dyn_std::map::Map1::map(
             Factory::tuple_3((a1, a2)),
-            |(a3, a4): (Factory, T)| -> (Box<dyn Meta<T>>, T) {
-                let a3 = Box::new(::dyn_std::Instance::new(a3));
-                (a3, a4)
+            |(b1, b2): (Factory, T)| -> (Box<dyn Meta<T>>, T) {
+                let b1 = Box::new(::dyn_std::Instance::new(b1));
+                (b1, b2)
             },
         )
     }
