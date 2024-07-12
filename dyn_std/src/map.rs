@@ -23,11 +23,7 @@ impl<T1, const N: usize> Map1<T1> for [T1; N] {
     type Input<S1> = [S1; N];
     #[inline]
     fn map<S1>(value: Self::Input<S1>, f1: fn(S1) -> T1) -> Self {
-        let mut result: [T1; N] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-        for (i, value) in value.into_iter().enumerate() {
-            result[i] = f1(value);
-        }
-        result
+        value.map(f1)
     }
 }
 

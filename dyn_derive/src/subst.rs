@@ -58,23 +58,24 @@ impl<'i> Context<'i> {
         }
     }
 
-    fn subst_ident(&self, ty: &mut syn::Type, stmts: &mut TokenStream, offset: &mut usize) -> (TokenStream, TokenStream, bool) {
+    fn subst_ident(&self, ty: &mut syn::Type, stmts: &mut TokenStream, offset: &mut usize, has_match: &mut bool) -> (TokenStream, TokenStream) {
         let char = (b'a' + (self.depth as u8 - 1)) as char;
         let ident = format_ident!("{}{}", char, *offset + 1);
-        let (expr, inner_stmts, destruct, has_match) = self.subst(ty, &ident, offset);
+        let (expr, inner_stmts, destruct, has_inner) = self.subst(ty, &ident, offset);
+        *has_match |= has_inner;
         stmts.extend(inner_stmts);
         match destruct {
             Destruct::Preserve(pref) => {
-                if has_match {
+                if has_inner {
                     stmts.extend(quote! { let #pref #ident = #expr; });
-                    (quote! { #ident }, quote! { #ident }, has_match)
+                    (quote! { #ident }, quote! { #ident })
                 } else {
-                    (quote! { #pref #ident }, expr, has_match)
+                    (quote! { #pref #ident }, expr)
                 }
             },
             Destruct::Tuple(pat) => {
                 *offset -= 1;
-                (quote! { #pat }, expr, has_match)
+                (quote! { #pat }, expr)
             },
         }
     }
@@ -89,9 +90,7 @@ impl<'i> Context<'i> {
             let mut ctx = self.clone();
             ctx.polarity ^= true;
             ctx.depth += 1;
-            let (pat, expr, has_input_match) = ctx.subst_ident(ty, &mut stmts, &mut offset);
-            println!("{} {}", ty.to_token_stream().to_string(), has_input_match);
-            has_match |= has_input_match;
+            let (pat, expr) = ctx.subst_ident(ty, &mut stmts, &mut offset, &mut has_match);
             offset += 1;
             exprs.push(expr);
             params.push(pat);
@@ -222,9 +221,8 @@ impl<'i> Context<'i> {
                 let mut has_match = false;
                 let (pats, exprs) = tuple.elems.iter_mut().map(|ty| {
                     let ctx = self.clone();
-                    let (pat, expr, has_inner_match) = ctx.subst_ident(ty, &mut stmts, offset);
+                    let (pat, expr) = ctx.subst_ident(ty, &mut stmts, offset, &mut has_match);
                     *offset += 1;
-                    has_match |= has_inner_match;
                     (pat, expr)
                 }).unzip::<TokenStream, TokenStream, Vec<_>, Vec<_>>();
                 if !has_match {
