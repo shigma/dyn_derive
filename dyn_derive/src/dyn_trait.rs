@@ -158,14 +158,14 @@ pub fn get_full_name(item: &syn::ItemTrait) -> (TokenStream, TokenStream) {
 
 pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
     let mut inst = fact.clone();
-    let inst_ident = inst.ident.clone();
-    let fact_ident = format_ident!("{}Factory", inst_ident);
+    let fact_ident = format_ident!("{}", inst.ident);
+    inst.ident = format_ident!("{}Instance", inst.ident);
     let generics = GenericsData::from(&mut inst);
     let (inst_trait, _) = get_full_name(&inst);
     let super_impls = supertraits(&mut fact, &mut inst);
-    fact.generics.params.iter_mut().for_each(|param| {
+    for param in fact.generics.params.iter_mut() {
         let syn::GenericParam::Type(param) = param else {
-            return;
+            continue;
         };
         let index = param.attrs.iter().position(|attr| {
             attr.meta.path().is_ident("dynamic")
@@ -174,18 +174,9 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
             param.attrs.remove(index);
         } else {
             param.bounds.push(syn::parse_quote! { 'static });
-            return;
+            continue;
         }
-        for bound in &mut param.bounds {
-            match bound {
-                syn::TypeParamBound::Trait(bound) => {
-                    let last = bound.path.segments.last_mut().unwrap();
-                    last.ident = format_ident!("{}Factory", last.ident);
-                },
-                _ => {},
-            }
-        }
-    });
+    }
     fact.ident = fact_ident;
     let (fact_trait, fact_phantom) = get_full_name(&fact);
     let mut fact_items = vec![];

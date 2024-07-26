@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::mem::replace;
 
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
+use quote::{format_ident, quote, ToTokens};
 
 use crate::dyn_trait::get_full_name;
 
@@ -49,6 +49,7 @@ impl GenericsData {
                 match bound {
                     syn::TypeParamBound::Trait(bound) => {
                         let last = bound.path.segments.last_mut().unwrap();
+                        last.ident = format_ident!("{}Instance", last.ident);
                         let args = std::mem::replace(&mut last.arguments, Default::default());
                         match args {
                             syn::PathArguments::None => {
