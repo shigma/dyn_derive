@@ -9,7 +9,7 @@ pub trait Meta: Sized + Debug + Add {}
 #[derive(Debug)]
 pub struct MetaImpl(String);
 
-impl Meta for MetaImpl {}
+impl MetaInstance for MetaImpl {}
 
 impl Add for MetaImpl {
     type Output = Self;
@@ -19,7 +19,7 @@ impl Add for MetaImpl {
 }
 
 pub struct Foo {
-    meta: Box<dyn Meta>,
+    meta: Box<dyn MetaInstance>,
 }
 
 impl Add for Foo {

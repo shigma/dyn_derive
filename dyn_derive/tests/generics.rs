@@ -15,7 +15,7 @@ pub struct MyMap<V: Clone> {
     store: HashMap<String, V>,
 }
 
-impl<V: Clone + 'static> MapFactory<V> for MyMap<V> {
+impl<V: Clone + 'static> Map<V> for MyMap<V> {
     fn new() -> Self {
         Self {
             store: Default::default(),
@@ -33,7 +33,7 @@ impl<V: Clone + 'static> MapFactory<V> for MyMap<V> {
 
 #[test]
 fn main() {
-    let map: &mut dyn Map<i32> = &mut Instance::new(MyMap::new());
+    let map: &mut dyn MapInstance<i32> = &mut Instance::new(MyMap::new());
     map.set("a", 1);
     map.set("b", 2);
     assert_eq!(map.get("a"), Some(&1));

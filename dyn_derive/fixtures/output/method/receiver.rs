@@ -1,15 +1,15 @@
-trait Meta<T>: ::dyn_std::any::Dyn {
+trait MetaInstance<T>: ::dyn_std::any::Dyn {
     fn method_1(self: Box<Self>);
     fn method_2(&self);
     fn method_3(self: Box<Self>);
 }
-trait MetaFactory<T: 'static>: Sized + 'static {
+trait Meta<T: 'static>: Sized + 'static {
     fn method_1(self);
     fn method_2(&self);
     fn method_3(self: Box<Self>);
 }
 #[automatically_derived]
-impl<T: 'static, Factory: MetaFactory<T>> Meta<T>
+impl<T: 'static, Factory: Meta<T>> MetaInstance<T>
 for ::dyn_std::Instance<Factory, (T,)> {
     #[inline]
     fn method_1(self: Box<Self>) {

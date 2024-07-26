@@ -8,16 +8,16 @@ pub trait Meta: Debug + PartialEq {}
 #[derive(Debug, PartialEq)]
 pub struct MetaImpl1(i32);
 
-impl Meta for MetaImpl1 {}
+impl MetaInstance for MetaImpl1 {}
 
 #[derive(Debug, PartialEq)]
 pub struct MetaImpl2(i32);
 
-impl Meta for MetaImpl2 {}
+impl MetaInstance for MetaImpl2 {}
 
 #[derive(Debug, PartialEq)]
 pub struct Foo {
-    meta: Box<dyn Meta>,
+    meta: Box<dyn MetaInstance>,
 }
 
 #[test]

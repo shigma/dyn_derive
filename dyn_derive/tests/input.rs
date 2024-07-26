@@ -14,7 +14,7 @@ pub trait Meta<T>: Clone {
 #[derive(Clone)]
 struct MetaImpl<T>(T);
 
-impl<T: Clone + 'static> MetaFactory<T> for MetaImpl<T> {
+impl<T: Clone + 'static> Meta<T> for MetaImpl<T> {
     fn method_1(arg1: T, _arg2: Self, _arg3: &Self, _arg4: Box<Self>) -> Self {
         MetaImpl(arg1)
     }
@@ -42,7 +42,7 @@ impl<T: Clone + 'static> MetaFactory<T> for MetaImpl<T> {
 
 #[test]
 fn main() {
-    let instance: Box<dyn Meta<i32>> = Box::new(Instance::new(MetaImpl(42)));
+    let instance: Box<dyn MetaInstance<i32>> = Box::new(Instance::new(MetaImpl(42)));
     instance.method_1(0, instance.clone(), instance.as_ref(), instance.clone());
     instance.method_3(vec![instance.clone()], vec![instance.as_ref()]);
     instance.method_4(Some(instance.clone()), Some(instance.as_ref()));

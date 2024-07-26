@@ -24,12 +24,12 @@ pub trait Context<#[dynamic] E: Error, #[dynamic] V: Value<E>> {
 #[derive(Debug, PartialEq)]
 struct MyError;
 
-impl ErrorFactory for MyError {}
+impl Error for MyError {}
 
 #[derive(Debug, Clone, PartialEq)]
 struct MyValue(u32);
 
-impl ValueFactory<MyError> for MyValue {
+impl Value<MyError> for MyValue {
     fn new(v: i32) -> Result<Self, MyError> {
         if v < 0 {
             Err(MyError)
@@ -64,7 +64,7 @@ impl MyContext {
     }
 }
 
-impl ContextFactory<MyError, MyValue> for MyContext {
+impl Context<MyError, MyValue> for MyContext {
     fn get(&self, name: &str) -> Option<MyValue> {
         self.store.get(name).cloned()
     }
@@ -80,12 +80,12 @@ impl ContextFactory<MyError, MyValue> for MyContext {
 
 #[test]
 fn main() {
-    let ctx: &mut dyn Context = &mut Instance::new(MyContext::new());
-    let value: &mut dyn Value = &mut Instance::new(MyValue::new(42).unwrap());
+    let ctx: &mut dyn ContextInstance = &mut Instance::new(MyContext::new());
+    let value: &mut dyn ValueInstance = &mut Instance::new(MyValue::new(42).unwrap());
     assert_eq!(value.get(), 42);
     assert_eq!(value.set(514), Ok(()));
     assert_eq!(value.get(), 514);
-    assert_eq!(value.set(-1), Err(Box::new(Instance::new(MyError)) as Box<dyn Error>));
+    assert_eq!(value.set(-1), Err(Box::new(Instance::new(MyError)) as Box<dyn ErrorInstance>));
     assert_eq!(value.get(), 514);
     ctx.set("x", Box::new(Instance::new(MyValue::new(114).unwrap())));
     let value = ctx.get("x").unwrap();
