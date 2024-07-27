@@ -34,7 +34,7 @@ pub trait Foo: Clone + PartialEq {
 
 #[derive(Clone, PartialEq)]
 pub struct Bar {
-    meta: Box<dyn Foo>,         // Now it works!
+    meta: Box<dyn FooInstance>,         // Now it works!
 }
 ```
 
@@ -53,6 +53,7 @@ Below is a basic example of how to use this crate:
 ```rust
 use std::fmt::Debug;
 use dyn_derive::*;
+use dyn_std::Instance;
 
 #[dyn_trait]
 pub trait Foo: Debug + Clone + PartialEq {
@@ -68,12 +69,12 @@ impl Foo for MetaImpl {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bar {
-    meta: Box<dyn Foo>,
+    meta: Box<dyn FooInstance>,
 }
 
 fn main() {
-    let foo1 = Bar { meta: Box::new(MetaImpl) };
-    let foo2 = Bar { meta: Box::new(MetaImpl) };
+    let foo1 = Bar { meta: Box::new(Instance::new(MetaImpl)) };
+    let foo2 = Bar { meta: Box::new(Instance::new(MetaImpl)) };
     assert_eq!(foo1, foo2);
     let foo3 = foo1.clone();
     assert_eq!(foo3.meta.answer(), 42);
@@ -88,6 +89,7 @@ Taking the `Add` trait as an example:
 use std::fmt::Debug;
 use std::ops::Add;
 use dyn_derive::*;
+use dyn_std::Instance;
 
 #[dyn_trait]
 pub trait Foo: Debug + Add {}
@@ -106,7 +108,7 @@ impl Add for MetaImpl {
 }
 
 pub struct Bar {
-    pub meta: Box<dyn Foo>,
+    pub meta: Box<dyn FooInstance>,
 }
 
 impl Add for Bar {
@@ -114,15 +116,15 @@ impl Add for Bar {
 
     fn add(self, rhs: Self) -> Self {
         Self {
-            // `Box<dyn Foo>` can be added!
+            // `Box<dyn FooInstance>` can be added!
             meta: self.meta + rhs.meta,
         }
     }
 }
 
 fn main() {
-    let foo1 = Bar { meta: Box::new(MetaImpl("114".into())) };
-    let foo2 = Bar { meta: Box::new(MetaImpl("514".into())) };
+    let foo1 = Bar { meta: Box::new(Instance::new(MetaImpl("114".into()))) };
+    let foo2 = Bar { meta: Box::new(Instance::new(MetaImpl("514".into()))) };
     let foo3 = foo1 + foo2;
     println!("{:?}", foo3.meta);    // MetaImpl("114514")
 }

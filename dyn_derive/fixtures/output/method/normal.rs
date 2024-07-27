@@ -10,11 +10,10 @@ trait MetaConstructor<T> {
     fn method_3(&self, arg1: i32, arg2: (Rc<T>, Result<(), T>));
 }
 #[automatically_derived]
-impl<T: 'static, Factory: Meta<T>> MetaInstance<T>
-for ::dyn_std::Instance<Factory, (T,)> {}
+impl<T: 'static, Factory: Meta<T>> MetaInstance<T> for ::dyn_std::Instance<Factory> {}
 #[automatically_derived]
 impl<T: 'static, Factory: Meta<T>> MetaConstructor<T>
-for ::dyn_std::Constructor<Factory, (T,)> {
+for ::dyn_std::Constructor<Factory> {
     #[inline]
     fn method_1(&self, a1: i32) {
         Factory::method_1(a1)

@@ -16,6 +16,6 @@ impl std::cmp::PartialEq<&Self> for Box<dyn MetaInstance> {
     }
 }
 #[automatically_derived]
-impl<Factory: Meta> MetaInstance for ::dyn_std::Instance<Factory, ()> {}
+impl<Factory: Meta> MetaInstance for ::dyn_std::Instance<Factory> {}
 #[automatically_derived]
-impl<Factory: Meta> MetaConstructor for ::dyn_std::Constructor<Factory, ()> {}
+impl<Factory: Meta> MetaConstructor for ::dyn_std::Constructor<Factory> {}

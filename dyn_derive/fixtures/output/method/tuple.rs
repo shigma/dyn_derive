@@ -19,19 +19,18 @@ trait MetaConstructor<T> {
     fn tuple_4(&self, arg: (T, Vec<T>)) -> (Option<T>, T);
 }
 #[automatically_derived]
-impl<T: 'static, Factory: Meta<T>> MetaInstance<T>
-for ::dyn_std::Instance<Factory, (T,)> {}
+impl<T: 'static, Factory: Meta<T>> MetaInstance<T> for ::dyn_std::Instance<Factory> {}
 #[automatically_derived]
 impl<T: 'static, Factory: Meta<T>> MetaConstructor<T>
-for ::dyn_std::Constructor<Factory, (T,)> {
+for ::dyn_std::Constructor<Factory> {
     #[inline]
     fn tuple_1(
         &self,
         ((a1, a2), a3): ((Box<dyn MetaInstance<T>>, T), Box<dyn MetaInstance<T>>),
         a4: T,
     ) {
-        let a1 = ::dyn_std::Instance::<Factory, ()>::downcast(a1);
-        let a3 = ::dyn_std::Instance::<Factory, ()>::downcast(a3);
+        let a1 = ::dyn_std::Instance::<Factory>::downcast(a1);
+        let a3 = ::dyn_std::Instance::<Factory>::downcast(a3);
         Factory::tuple_1(((a1, a2), a3), a4)
     }
     #[inline]
@@ -49,7 +48,7 @@ for ::dyn_std::Constructor<Factory, (T,)> {
         let a2 = ::dyn_std::map::Map1::map(
             a2,
             |x: Box<dyn MetaInstance<T>>| -> Factory {
-                ::dyn_std::Instance::<Factory, ()>::downcast(x)
+                ::dyn_std::Instance::<Factory>::downcast(x)
             },
         );
         ::dyn_std::map::Map1::map(

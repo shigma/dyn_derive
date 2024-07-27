@@ -47,11 +47,10 @@ trait MetaConstructor<T> {
     ) -> Box<dyn FnOnce(Box<dyn MetaInstance<T>>) -> Box<dyn MetaInstance<T>>>;
 }
 #[automatically_derived]
-impl<T: 'static, Factory: Meta<T>> MetaInstance<T>
-for ::dyn_std::Instance<Factory, (T,)> {}
+impl<T: 'static, Factory: Meta<T>> MetaInstance<T> for ::dyn_std::Instance<Factory> {}
 #[automatically_derived]
 impl<T: 'static, Factory: Meta<T>> MetaConstructor<T>
-for ::dyn_std::Constructor<Factory, (T,)> {
+for ::dyn_std::Constructor<Factory> {
     #[inline]
     fn method_1(
         &self,
@@ -59,7 +58,7 @@ for ::dyn_std::Constructor<Factory, (T,)> {
     ) {
         let a1 = &|b1| {
             let b1 = Box::new(::dyn_std::Instance::new(b1));
-            ::dyn_std::Instance::<Factory, ()>::downcast(a1(b1))
+            ::dyn_std::Instance::<Factory>::downcast(a1(b1))
         };
         Factory::method_1(a1)
     }
@@ -70,7 +69,7 @@ for ::dyn_std::Constructor<Factory, (T,)> {
     ) {
         let a1 = &mut |b1| {
             let b1 = Box::new(::dyn_std::Instance::new(b1));
-            ::dyn_std::Instance::<Factory, ()>::downcast(a1(b1))
+            ::dyn_std::Instance::<Factory>::downcast(a1(b1))
         };
         Factory::method_2(a1)
     }
@@ -81,7 +80,7 @@ for ::dyn_std::Constructor<Factory, (T,)> {
     ) {
         let a1 = Box::new(move |b1| {
             let b1 = Box::new(::dyn_std::Instance::new(b1));
-            ::dyn_std::Instance::<Factory, ()>::downcast(a1(b1))
+            ::dyn_std::Instance::<Factory>::downcast(a1(b1))
         });
         Factory::method_3(a1)
     }
@@ -92,7 +91,7 @@ for ::dyn_std::Constructor<Factory, (T,)> {
     ) {
         let mut a1 = Box::new(move |b1| {
             let b1 = Box::new(::dyn_std::Instance::new(b1));
-            ::dyn_std::Instance::<Factory, ()>::downcast(a1(b1))
+            ::dyn_std::Instance::<Factory>::downcast(a1(b1))
         });
         Factory::method_4(a1)
     }
@@ -107,10 +106,10 @@ for ::dyn_std::Constructor<Factory, (T,)> {
     ) {
         let mut a1 = Box::new(move |b1| {
             let mut b1 = Box::new(move |c1| {
-                let c1 = ::dyn_std::Instance::<Factory, ()>::downcast(c1);
+                let c1 = ::dyn_std::Instance::<Factory>::downcast(c1);
                 Box::new(::dyn_std::Instance::new(b1(c1)))
             });
-            ::dyn_std::Instance::<Factory, ()>::downcast(a1(b1))
+            ::dyn_std::Instance::<Factory>::downcast(a1(b1))
         });
         Factory::method_5(a1)
     }
@@ -127,7 +126,7 @@ for ::dyn_std::Constructor<Factory, (T,)> {
             let b1 = Box::new(::dyn_std::Instance::new(b1));
             Box::new(move |c1| {
                 let c1 = Box::new(::dyn_std::Instance::new(c1));
-                ::dyn_std::Instance::<Factory, ()>::downcast(a1(b1)(c1))
+                ::dyn_std::Instance::<Factory>::downcast(a1(b1)(c1))
             })
         });
         Factory::method_6(a1)
@@ -139,10 +138,10 @@ for ::dyn_std::Constructor<Factory, (T,)> {
     ) -> Box<dyn FnOnce(Box<dyn MetaInstance<T>>) -> Box<dyn MetaInstance<T>>> {
         let a1 = Box::new(move |b1| {
             let b1 = Box::new(::dyn_std::Instance::new(b1));
-            ::dyn_std::Instance::<Factory, ()>::downcast(a1(b1))
+            ::dyn_std::Instance::<Factory>::downcast(a1(b1))
         });
         Box::new(move |b1| {
-            let b1 = ::dyn_std::Instance::<Factory, ()>::downcast(b1);
+            let b1 = ::dyn_std::Instance::<Factory>::downcast(b1);
             Box::new(::dyn_std::Instance::new(Factory::method_7(a1)(b1)))
         })
     }

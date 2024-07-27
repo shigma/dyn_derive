@@ -8,17 +8,21 @@ use dyn_std::Instance;
 pub trait Error: Debug + PartialEq {}
 
 #[dyn_trait]
-pub trait Value<#[dynamic] E: Error>: Debug + Clone + PartialEq {
-    fn new(v: i32) -> Result<Self, E>;
+pub trait Value: Debug + Clone + PartialEq {
+    #[dyn_trait]
+    type E: Error;
+    fn new(v: i32) -> Result<Self, Self::E>;
     fn get(&self) -> i32;
-    fn set(&mut self, v: i32) -> Result<(), E>;
+    fn set(&mut self, v: i32) -> Result<(), Self::E>;
 }
 
 #[dyn_trait]
-pub trait Context<#[dynamic] E: Error, #[dynamic] V: Value<E>> {
-    fn get(&self, name: &str) -> Option<V>;
-    fn set(&mut self, name: &str, value: V);
-    fn extend(&mut self, store: HashMap<String, V>);
+pub trait Context {
+    #[dyn_trait]
+    type V: Value;
+    fn get(&self, name: &str) -> Option<Self::V>;
+    fn set(&mut self, name: &str, value: Self::V);
+    fn extend(&mut self, store: HashMap<String, Self::V>);
 }
 
 #[derive(Debug, PartialEq)]
@@ -29,7 +33,9 @@ impl Error for MyError {}
 #[derive(Debug, Clone, PartialEq)]
 struct MyValue(u32);
 
-impl Value<MyError> for MyValue {
+impl Value for MyValue {
+    type E = MyError;
+
     fn new(v: i32) -> Result<Self, MyError> {
         if v < 0 {
             Err(MyError)
@@ -52,7 +58,7 @@ impl Value<MyError> for MyValue {
     }
 }
 
-pub struct MyContext {
+struct MyContext {
     store: HashMap<String, MyValue>,
 }
 
@@ -64,7 +70,9 @@ impl MyContext {
     }
 }
 
-impl Context<MyError, MyValue> for MyContext {
+impl Context for MyContext {
+    type V = MyValue;
+
     fn get(&self, name: &str) -> Option<MyValue> {
         self.store.get(name).cloned()
     }

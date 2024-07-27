@@ -42,7 +42,7 @@ impl<T: Clone + 'static> Meta<T> for MetaImpl<T> {
 
 #[test]
 fn main() {
-    let cons: Box<dyn MetaConstructor<i32>> = Box::new(Constructor::<MetaImpl<i32>, _>::new());
+    let cons: Box<dyn MetaConstructor<i32>> = Box::new(Constructor::<MetaImpl<i32>>::new());
     let inst: Box<dyn MetaInstance<i32>> = Box::new(Instance::new(MetaImpl(42)));
     cons.method_1(0, inst.clone(), inst.as_ref(), inst.clone());
     cons.method_3(vec![inst.clone()], vec![inst.as_ref()]);

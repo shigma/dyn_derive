@@ -17,17 +17,16 @@ trait MetaConstructor<T> {
     );
 }
 #[automatically_derived]
-impl<T: 'static, Factory: Meta<T>> MetaInstance<T>
-for ::dyn_std::Instance<Factory, (T,)> {}
+impl<T: 'static, Factory: Meta<T>> MetaInstance<T> for ::dyn_std::Instance<Factory> {}
 #[automatically_derived]
 impl<T: 'static, Factory: Meta<T>> MetaConstructor<T>
-for ::dyn_std::Constructor<Factory, (T,)> {
+for ::dyn_std::Constructor<Factory> {
     #[inline]
     fn option(&self, a1: Option<Box<dyn MetaInstance<T>>>) {
         let a1 = ::dyn_std::map::Map1::map(
             a1,
             |x: Box<dyn MetaInstance<T>>| -> Factory {
-                ::dyn_std::Instance::<Factory, ()>::downcast(x)
+                ::dyn_std::Instance::<Factory>::downcast(x)
             },
         );
         Factory::option(a1)
@@ -37,7 +36,7 @@ for ::dyn_std::Constructor<Factory, (T,)> {
         let a1 = ::dyn_std::map::Map2::map(
             a1,
             |x: Box<dyn MetaInstance<T>>| -> Factory {
-                ::dyn_std::Instance::<Factory, ()>::downcast(x)
+                ::dyn_std::Instance::<Factory>::downcast(x)
             },
             |x: ()| x,
         );
@@ -49,7 +48,7 @@ for ::dyn_std::Constructor<Factory, (T,)> {
             a1,
             |x: ()| x,
             |x: Box<dyn MetaInstance<T>>| -> Factory {
-                ::dyn_std::Instance::<Factory, ()>::downcast(x)
+                ::dyn_std::Instance::<Factory>::downcast(x)
             },
         );
         Factory::result_2(a1)
@@ -59,7 +58,7 @@ for ::dyn_std::Constructor<Factory, (T,)> {
         let a1 = ::dyn_std::map::Map1::map(
             a1,
             |x: Box<dyn MetaInstance<T>>| -> Factory {
-                ::dyn_std::Instance::<Factory, ()>::downcast(x)
+                ::dyn_std::Instance::<Factory>::downcast(x)
             },
         );
         Factory::vec(a1)
@@ -77,14 +76,14 @@ for ::dyn_std::Constructor<Factory, (T,)> {
                     b2,
                 ): (Box<dyn MetaInstance<T>>, Option<Option<Box<dyn MetaInstance<T>>>>),
             | -> (Factory, Option<Option<Factory>>) {
-                let b1 = ::dyn_std::Instance::<Factory, ()>::downcast(b1);
+                let b1 = ::dyn_std::Instance::<Factory>::downcast(b1);
                 let b2 = ::dyn_std::map::Map1::map(
                     b2,
                     |x: Option<Box<dyn MetaInstance<T>>>| -> Option<Factory> {
                         ::dyn_std::map::Map1::map(
                             x,
                             |x: Box<dyn MetaInstance<T>>| -> Factory {
-                                ::dyn_std::Instance::<Factory, ()>::downcast(x)
+                                ::dyn_std::Instance::<Factory>::downcast(x)
                             },
                         )
                     },

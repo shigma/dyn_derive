@@ -10,8 +10,7 @@ trait MetaInstance<T>: ::dyn_std::any::Dyn {
 }
 trait MetaConstructor<T> {}
 #[automatically_derived]
-impl<T: 'static, Factory: Meta<T>> MetaInstance<T>
-for ::dyn_std::Instance<Factory, (T,)> {
+impl<T: 'static, Factory: Meta<T>> MetaInstance<T> for ::dyn_std::Instance<Factory> {
     #[inline]
     fn method_1(self: Box<Self>) {
         self.0.method_1()
@@ -27,4 +26,4 @@ for ::dyn_std::Instance<Factory, (T,)> {
 }
 #[automatically_derived]
 impl<T: 'static, Factory: Meta<T>> MetaConstructor<T>
-for ::dyn_std::Constructor<Factory, (T,)> {}
+for ::dyn_std::Constructor<Factory> {}
