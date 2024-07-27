@@ -1,5 +1,5 @@
 use dyn_derive::*;
-use dyn_std::Instance;
+use dyn_std::{Constructor, Instance};
 
 #[dyn_trait]
 pub trait Meta<T>: Clone {
@@ -42,10 +42,11 @@ impl<T: Clone + 'static> Meta<T> for MetaImpl<T> {
 
 #[test]
 fn main() {
-    let instance: Box<dyn MetaInstance<i32>> = Box::new(Instance::new(MetaImpl(42)));
-    instance.method_1(0, instance.clone(), instance.as_ref(), instance.clone());
-    instance.method_3(vec![instance.clone()], vec![instance.as_ref()]);
-    instance.method_4(Some(instance.clone()), Some(instance.as_ref()));
-    instance.method_5(Ok(instance.clone()), Err(instance.as_ref()));
-    instance.method_6(&mut |x| x);
+    let cons: Box<dyn MetaConstructor<i32>> = Box::new(Constructor::<MetaImpl<i32>, _>::new());
+    let inst: Box<dyn MetaInstance<i32>> = Box::new(Instance::new(MetaImpl(42)));
+    cons.method_1(0, inst.clone(), inst.as_ref(), inst.clone());
+    cons.method_3(vec![inst.clone()], vec![inst.as_ref()]);
+    cons.method_4(Some(inst.clone()), Some(inst.as_ref()));
+    cons.method_5(Ok(inst.clone()), Err(inst.as_ref()));
+    inst.method_6(&mut |x| x);
 }

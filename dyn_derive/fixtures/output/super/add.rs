@@ -1,4 +1,6 @@
+trait Meta: Add<Output = Self> + Sized + 'static {}
 trait MetaInstance: ::dyn_std::ops::Add + ::dyn_std::any::Dyn {}
+trait MetaConstructor {}
 #[automatically_derived]
 impl std::ops::Add for Box<dyn MetaInstance> {
     type Output = Self;
@@ -7,6 +9,7 @@ impl std::ops::Add for Box<dyn MetaInstance> {
         ::dyn_std::Fat::into_box(self, |m| m.dyn_add(other.as_any_box()))
     }
 }
-trait Meta: Add<Output = Self> + Sized + 'static {}
 #[automatically_derived]
 impl<Factory: Meta> MetaInstance for ::dyn_std::Instance<Factory, ()> {}
+#[automatically_derived]
+impl<Factory: Meta> MetaConstructor for ::dyn_std::Constructor<Factory, ()> {}
