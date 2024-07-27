@@ -90,7 +90,8 @@ impl GenericsData {
         if last.ident == "Self" {
             return Some((
                 make_dyn(&self.name, is_ref),
-                quote! { Self },
+                // quote! { Self },
+                quote! { ::dyn_std::Instance::<Factory, ()> }, // FIXME
             ))
         }
         let Some(g) = self.data.get(&last.ident.to_string()) else {
