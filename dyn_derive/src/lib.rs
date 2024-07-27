@@ -21,7 +21,7 @@ mod subst_self;
 /// 
 /// #[derive(Clone)]
 /// pub struct Foo {
-///     meta: Box<dyn Meta>,
+///     meta: Box<dyn MetaInstance>,
 /// }
 /// ```
 #[proc_macro_attribute]

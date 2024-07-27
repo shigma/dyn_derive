@@ -161,10 +161,10 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
     let mut inst = fact.clone();
     inst.ident = format_ident!("{}Instance", fact.ident);
     inst.items = Default::default();
-    let generics = GenericsData::from(&mut inst);
+    let (inst_trait, _) = get_full_name(&inst);
+    let generics = GenericsData::from(inst_trait.clone(), &mut fact);
     let mut cons = inst.clone();
     cons.ident = format_ident!("{}Constructor", fact.ident);
-    let (inst_trait, _) = get_full_name(&inst);
     let (cons_trait, _) = get_full_name(&cons);
     let super_impls = supertraits(&mut fact, &mut inst, &mut cons);
     for param in fact.generics.params.iter_mut() {
@@ -181,10 +181,10 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
             continue;
         }
     }
-    let (fact_trait, fact_phantom) = get_full_name(&fact);
+    let (fact_trait, _) = get_full_name(&fact);
     let mut inst_impl_items = vec![];
     let mut cons_impl_items = vec![];
-    for fact_item in &fact.items {
+    for fact_item in &generics.items {
         match fact_item {
             syn::TraitItem::Fn(item_fn) => {
                 let mut item_fn = item_fn.clone();
@@ -251,11 +251,11 @@ pub fn transform(_attr: TokenStream, mut fact: syn::ItemTrait) -> TokenStream {
         #cons
         #super_impls
         #[automatically_derived]
-        impl #impl_generics #inst_trait for ::dyn_std::Instance<Factory, #fact_phantom> #where_clause {
+        impl #impl_generics #inst_trait for ::dyn_std::Instance<Factory> #where_clause {
             #(#inst_impl_items)*
         }
         #[automatically_derived]
-        impl #impl_generics #cons_trait for ::dyn_std::Constructor<Factory, #fact_phantom> #where_clause {
+        impl #impl_generics #cons_trait for ::dyn_std::Constructor<Factory> #where_clause {
             #(#cons_impl_items)*
         }
     }

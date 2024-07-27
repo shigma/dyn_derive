@@ -26,7 +26,7 @@ impl<T: core::clone::Clone> Clone for [T] {
     }
 }
 
-impl<T: core::clone::Clone, U> core::clone::Clone for Instance<T, U> {
+impl<T: core::clone::Clone> core::clone::Clone for Instance<T> {
     #[inline]
     fn clone(&self) -> Self {
         Self::new(self.0.clone())

@@ -4,7 +4,7 @@ use crate::Instance;
 
 macro_rules! impl_fmt_trait {
     ($t:ident) => {
-        impl<T: $t, U> $t for Instance<T, U> {
+        impl<T: $t> $t for Instance<T> {
             fn fmt(&self, f: &mut Formatter) -> Result {
                 self.0.fmt(f)
             }

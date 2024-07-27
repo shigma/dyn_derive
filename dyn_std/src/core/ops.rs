@@ -16,7 +16,7 @@ macro_rules! unary {
             }
         }
 
-        impl<T: core::ops::$trait<Output = T>, U> core::ops::$trait for Instance<T, U> {
+        impl<T: core::ops::$trait<Output = T>> core::ops::$trait for Instance<T> {
             type Output = Self;
             #[inline]
             fn $original(self) -> Self {
@@ -41,7 +41,7 @@ macro_rules! binary {
             }
         }
 
-        impl<T: core::ops::$trait<Output = T>, U> core::ops::$trait for Instance<T, U> {
+        impl<T: core::ops::$trait<Output = T>> core::ops::$trait for Instance<T> {
             type Output = Self;
             #[inline]
             fn $original(self, other: Self) -> Self {
@@ -66,7 +66,7 @@ macro_rules! assign {
             }
         }
 
-        impl<T: core::ops::$trait, U> core::ops::$trait for Instance<T, U> {
+        impl<T: core::ops::$trait> core::ops::$trait for Instance<T> {
             #[inline]
             fn $original(&mut self, other: Self) {
                 self.0.$original(other.0)
